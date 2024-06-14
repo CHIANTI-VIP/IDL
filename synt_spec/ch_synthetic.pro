@@ -752,7 +752,10 @@
 ;           Ask to choose ionization equilibrium file for transparency, in
 ;           case the NO ADVANCED MODEL option is chosen.
 ;
-;   VERSION 58
+;          v.59, 14 June 2024, Giulio Del Zanna
+;           clarified warning/error messages.
+;
+;   VERSION 59
 ;-
 PRO info_progress, pct,lastpct,pctage, pct_slider_id,$
            interrupt_id,halt,quiet, snote,  group=group
@@ -1061,20 +1064,20 @@ PRO ch_synthetic, wmin, wmax, output=output, err_msg=err_msg, msg=msg, $
 
      dlnt=ALOG(10.^(ioneq_logt[1]-ioneq_logt[0]))      
 
-  endif    else begin
+  endif     else begin
 
 ; GDZ- ADVANCED model:
 ;---------------------
      
      IF n_elements(ioneq_name) EQ 0 then begin
-        print, '% CH_SYNTHETIC:  WARNING *** YOU HAVE NOT DEFINED THE NAME OF THE IONEQ FILE ...'
+        print, '% CH_SYNTHETIC: ADVANCED ionization model WARNING: *** YOU HAVE NOT DEFINED THE NAME OF THE IONEQ FILE ...'
         print, '% CH_SYNTHETIC: DEFAULT NAME THAT WILL BE WRITTEN in the working directory IS: chianti_adv.ioneq'
-        print, '% CH_SYNTHETIC:  WARNING *** do not move this file as it will be read by other routines later on, '
+        print, '% CH_SYNTHETIC:  do not move this file as it will be read by other routines later on, '
         print, ' when you create a spectrum'
         ioneq_name=  concat_dir(curdir() , 'chianti_adv.ioneq')
      endif else begin
         IF  file_exist(ioneq_name)   THEN BEGIN 
-           err_msg = '% CH_SYNTHETIC ERROR,  ioneq file '+ioneq_name+' already exist, give a different name!  -- EXIT'
+           err_msg = '% CH_SYNTHETIC ERROR, ADVANCED ionization model option requested but the ioneq file '+ioneq_name+' already exist, give it  a different name!  -- EXIT'
            print,err_msg
            return
         END 
