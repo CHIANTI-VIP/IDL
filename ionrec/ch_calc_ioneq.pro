@@ -2,10 +2,10 @@
 ;
 ; PROJECT:  CHIANTI
 ;
-;        This program was developed as part of CHIANTI-VIP. 
-;        CHIANTI-VIP (Virtual IDL and Python) is  a member of the CHIANTI family
-;        mantained by Giulio Del Zanna, to develop additional features and
-;        provide them to the astrophysics community.
+;       This program was developed as part of CHIANTI-VIP. 
+;       CHIANTI-VIP (Virtual IDL and Python) is  a member of the CHIANTI family
+;       mantained by Giulio Del Zanna, to develop additional features and
+;       provide them to the astrophysics community.
 ;
 ;       CHIANTI is an Atomic Database Package for Spectroscopic Diagnostics of
 ;       Astrophysical Plasmas. It is a collaborative project involving the
@@ -254,8 +254,8 @@
 ;                Modified comments in output of ioneq file.
 ;                Allow a density array to be inputted as well as a single constant density.
 ;
-;    v.8, 10 May 2024, RPD, altered density variable name so that it can be output as
-;                a variable when using a model file. Made temperature and density arrays double
+;    v.8, 10 May 2024, RPD, partial preparation of density variable being output when
+;                using a model file. Made temperature and density arrays double
 ;                precision in model file section for consistency with rest of routine.
 ;                Allowed elements to be entered by atomic number. Switched on
 ;                advanced models by default.
@@ -264,12 +264,13 @@
 ;                are now calculated. Only those requested (and available) are calculated with
 ;                the advanced model. All the others are calculated as before at zero density.
 ;                Also, by default a file is written in the working directory.
-;                A significant bug has been fixed: the single-value density as input was returned
-;                by mistake as an array.
+;                Completed density variable being output when using a model file.
 ;
-;     v.10, 24 May 2024, GDZ - Fixed a couple of bugs regarding writing the output file.
+;     v.10, 24 May 2024, GDZ - Completed routine to write output file.
 ;
-; VERSION    v.10
+;     v.11, 29 May 2024, RPD - Sundry changes to formatting, moved index_req check to element stage
+;
+; VERSION    v.11
 ;-
 
 
@@ -283,454 +284,450 @@ function ch_calc_ioneq,temperatures,outname=outname,elements=elements,density=de
   warning_msg=''
   
   if n_params() lt 1 then begin
-     err_msg='%CH_CALC_IONEQ: ERROR, please enter either a temperature range or a variable name to receive the temperature array'
-     print,err_msg & return,-1
+    err_msg='%CH_CALC_IONEQ: ERROR, please enter either a temperature range or a variable name to receive the temperature array'
+    print,err_msg & return,-1
   endif
   
   if n_elements(verbose) eq 0 then verbose=0 
   if verbose then quiet=0 else quiet=1
 
-; By default write a ion equilibrium file.
+  ; By default write an ion equilibrium file.
   if n_elements(outname) gt 0 then begin
 
-     if file_exist(outname) then begin
-        outname  ='adv_'+$
-                  trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
-        print,'% CH_CALC_IONEQ: requested ionization file exist. Writing output to '+outname
-     endif else begin
-        if file_exist('adv.ioneq') then begin
-           outname='adv_'+$
-                   trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
+    if file_exist(outname) then begin
+      outname  ='adv_'+$
+        trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
+      print,'% CH_CALC_IONEQ: requested ionization file exists. Writing output to '+outname
+    endif else begin
+      if file_exist('adv.ioneq') then begin
+        outname='adv_'+$
+          trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
+      endif else outname='adv.ioneq'
+    endelse 
 
-        endif else outname='adv.ioneq'
-     endelse 
   endif else begin
  
-        if file_exist('adv.ioneq') then begin
-           outname='adv_'+$
-                   trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
+    if file_exist('adv.ioneq') then begin
+      outname='adv_'+$
+        trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
+    endif else outname='adv.ioneq'
 
-        endif else outname='adv.ioneq'
-
-     if verbose then  print,'% CH_CALC_IONEQ: Writing output to '+outname
+    if verbose then  print,'% CH_CALC_IONEQ: Writing output to '+outname
  
   end
   
      
-; By default for now do not include charge transfer, but make the advanced models the default
-     if n_elements(advanced_model) eq 0 then advanced_model=1
-     if n_elements(ct) eq 0 then ct=0 ; GDZ
+  ; By default for now do not include charge transfer, but make the advanced models the default
+  if n_elements(advanced_model) eq 0 then advanced_model=1
+  if n_elements(ct) eq 0 then ct=0 ; GDZ
 
-     ioneqmin=1.e-20
-     zlabl=['H','He','Li','Be','B','C','N','O','F','Ne','Na',$
-            'Mg','Al','Si','P','S','Cl','Ar','K','Ca','Sc','Ti','V','Cr', $
-            'Mn','Fe','Co','Ni','Cu','Zn']
+  ioneqmin=1.e-20
+  zlabl=['H','He','Li','Be','B','C','N','O','F','Ne','Na',$
+        'Mg','Al','Si','P','S','Cl','Ar','K','Ca','Sc','Ti','V','Cr', $
+        'Mn','Fe','Co','Ni','Cu','Zn']
 
      
-                                ; begin various tests on inputs
-     
-     if n_elements(elements) gt 0 then begin
-        if isa(elements[0],/int) eq 1 then begin
-           requested_iz=elements
-           count=n_elements(elements)
-        endif else requested_iz=1+where_arr(zlabl, elements, count)
-        
-        if count ne n_elements(elements) then begin 
-           err_msg='% CH_CALC_IONEQ: ERROR in the input definition of the elements'
-           print,err_msg & return,-1
-        end
-        
-        if not keyword_set(advanced_model) then begin
-           err_msg='% CH_CALC_IONEQ: ERROR, to calculate single elements you need to add density-dependent effects with the keyword /advanced_model'
-           print,err_msg & return,-1
-        end
-        
-; GDZ:  else request all the elements:      
-     endif else requested_iz=1+indgen(30)
-     
-     if n_elements(model_file) gt 0 then begin ; GDZ
+  ; begin various tests on inputs
 
-        if n_elements(density) gt 0 then begin 
-           err_msg='% CH_CALC_IONEQ: ERROR, density cannot be defined if model is defined, it is an output !'
-           print,err_msg & return,-1
-        end
-        
-        if n_elements(temperatures) gt 0 then begin 
-           err_msg='% CH_CALC_IONEQ: ERROR, temperatures cannot be defined if model is defined!'
-           print,err_msg & return,-1
-        end
-        
-        if not file_exist(model_file) then begin 
-           err_msg='% CH_CALC_IONEQ: ERROR, input file '+model_file+' not found!'
-           print,err_msg & return,-1
-        end
-        
-                                ; obtain the temperatures and densities from the model file
-        mlines=file_lines(model_file)
-        model_data=strarr(mlines)
-        openr,lf,model_file,/get_lun
-        readf,lf,model_data
-        free_lun,lf
-        
-        comments=where(model_data.startswith('-1'),nc)
-        if nc gt 0 then nrecs=comments[0] else nrecs=mlines
+  if n_elements(elements) gt 0 then begin
+    if isa(elements[0],/int) eq 1 then begin
+        requested_iz=elements
+        count=n_elements(elements)
+    endif else requested_iz=1+where_arr(zlabl, elements, count)
+    
+    if count ne n_elements(elements) then begin 
+        err_msg='% CH_CALC_IONEQ: ERROR in the input definition of the elements'
+        print,err_msg & return,-1
+    end
+    
+    if not keyword_set(advanced_model) then begin
+        err_msg='% CH_CALC_IONEQ: ERROR, to calculate single elements you need to add density-dependent effects with the keyword /advanced_model'
+        print,err_msg & return,-1
+    end
+    
+  ; GDZ:  else request all the elements:      
+  endif else requested_iz=1+indgen(30)
 
-        rdfloat,model_file,temperatures,densities,numline=nrecs
-        temperatures=double(temperatures) & densities=double(densities)
-        
-; all atmospheric parameters below the temperature minimum and above the temperature maximum
-; have to be removed for temperature interpolation in ionization equilibrium
+  
+  if n_elements(model_file) gt 0 then begin ; GDZ
 
-        atmos_min=min(temperatures,atmin)
-        atmos_max=max(temperatures,atmax)
-        if atmin ne 0 or atmax ne nrecs then begin
-           print,'Double-valued temperature array found in atmosphere file,'
-           print,'parameters below temperature minimum and above temperature maximum will be removed'
-           temperatures=temperatures[atmin:atmax]
-           densities=densities[atmin:atmax]
-           log_temperatures=alog10(temperatures)
-           ntemp=n_elements(temperatures)
+    if n_elements(density) gt 0 then begin 
+      err_msg='% CH_CALC_IONEQ: ERROR, density cannot be defined if model is defined, it is an output !'
+      print,err_msg & return,-1
+    end
+    
+    if n_elements(temperatures) gt 0 then begin 
+      err_msg='% CH_CALC_IONEQ: ERROR, temperatures cannot be defined if model is defined!'
+      print,err_msg & return,-1
+    end
+    
+    if not file_exist(model_file) then begin 
+      err_msg='% CH_CALC_IONEQ: ERROR, input file '+model_file+' not found!'
+      print,err_msg & return,-1
+    end
+    
+    ; obtain the temperatures and densities from the model file
+    mlines=file_lines(model_file)
+    model_data=strarr(mlines)
+    openr,lf,model_file,/get_lun
+    readf,lf,model_data
+    free_lun,lf
+    
+    comments=where(model_data.startswith('-1'),nc)
+    if nc gt 0 then nrecs=comments[0] else nrecs=mlines
+
+    rdfloat,model_file,temperatures,densities,numline=nrecs
+    temperatures=double(temperatures) & densities=double(densities)
+    
+    ; all atmospheric parameters below the temperature minimum and above the temperature maximum
+    ; have to be removed for temperature interpolation in ionization equilibrium
+
+    atmos_min=min(temperatures,atmin)
+    atmos_max=max(temperatures,atmax)
+    if atmin ne 0 or atmax ne nrecs then begin
+      print,'Double-valued temperature array found in atmosphere file,'
+      print,'parameters below temperature minimum and above temperature maximum will be removed'
+      temperatures=temperatures[atmin:atmax]
+      densities=densities[atmin:atmax]
+      log_temperatures=alog10(temperatures)
+      ntemp=n_elements(temperatures)
+    endif
+    
+    ne_pe_comment='Model used Te, Ne from file: '+model_file
+    for ii=0,n_elements(temperatures)-1 do $
+      ne_pe_comment=[ne_pe_comment,string(temperatures[ii])+' '+string(densities[ii])]
+
+    ; now return density array
+    density=densities
+    
+  endif else begin 
+
+    ; the arrays of temperatures and density have to be defined if a model file is not used
+    ; if temperature not set, then use log T= 4-8 
+
+    if n_elements(temperatures) eq 0 then begin
+      log_temperatures=findgen(81)/20.0+4.0
+      temperatures=10.0d^log_temperatures
+      print,'Temperatures array has not been specified: default CHIANTI values will be used'
+    endif else temperatures=double(temperatures) 
+    ntemp=n_elements(temperatures)
+
+    if n_elements(density) gt 0 and n_elements(pressure) gt 0 then begin 
+      err_msg='% CH_CALC_IONEQ: ERROR, either density or pressure must be specified'
+      print,err_msg & return,-1
+    end
+    
+    if keyword_set(advanced_model) then begin
+      if n_elements(density) eq 0 and n_elements(pressure) eq 0 then begin 
+        err_msg='% CH_CALC_IONEQ: ERROR, either density or pressure must be specified for the advanced model'
+        print,err_msg & return,-1
+      end
+    endif
+
+    if n_elements(density) eq 1 then begin 
+      densities=dblarr(ntemp)+double(density)
+      ne_pe_comment='Model used constant density='+string(density)
+    endif else if n_elements(density) gt 1 then begin
+      if n_elements(density) ne ntemp then begin 
+        err_msg='% CH_CALC_IONEQ: ERROR, density array provided is not consistent with temperature array'
+        print,err_msg & return,-1
+      endif else densities=double(density)
+
+    endif else if n_elements(density) eq 0 then begin 
+      if n_elements(pressure) gt 1 then begin 
+        err_msg='% CH_CALC_IONEQ: ERROR, pressure array provided but only scalar allowed'
+        print,err_msg & return,-1
+      endif else if n_elements(pressure) eq 1 then begin
+        densities=double(pressure[0])/temperatures
+        ne_pe_comment='Model used constant pressure='+string(pressure)
+      endif else $
+        if keyword_set(verbose) then print,'% CH_CALC_IONEQ: calculating the zero-density case...'
+    endif 
+    
+  endelse    ; end of tests on inputs
+
+
+  ; now retrieve the global parameters used throughout the advanced model
+  if keyword_set(advanced_model) then begin
+
+    ion_comments=''
+
+    if keyword_set(ct) then begin
+      if n_elements(atmosphere_file) eq 0 then begin
+        atmosphere_file=ch_get_file(path=concat_dir(concat_dir(concat_dir(!xuvtop,'ancillary_data'),$
+          'advanced_models'),'model_atmospheres'),filter='*.dat',tit='Select an atmosphere file') 
+      endif else begin
+        if not file_exist(atmosphere_file) then begin
+          err_msg='% CH_CALC_IONEQ: ERROR, input atmosphere file does not exist'
+          print,err_msg & return,-1
         endif
-        
-        ne_pe_comment='Model used Te, Ne from file: '+model_file
-        for ii=0,n_elements(temperatures)-1 do $
-           ne_pe_comment=[ne_pe_comment,string(temperatures[ii])+' '+string(densities[ii])]
+      endelse
+    endif   
 
-; now return density array
-        density=densities
-        
-     endif else begin 
+    params=ch_adv_model_setup(temperatures,ct=ct,atmosphere_file=atmosphere_file,he_abund=he_abund)
 
-; the arrays of temperatures and density have to be defined if a model file is not used
-; if temperature not set, then use log T= 4-8 
+    model_ions=params.model_ions
+    ions_nlevels=params.ions_nlevels ; GDZ
 
-        if n_elements(temperatures) eq 0 then begin
-           log_temperatures=findgen(81)/20.0+4.0
-           temperatures=10.0d^log_temperatures
-           print,'Temperatures array has not been specified: default CHIANTI values will be used'
-        endif else temperatures=double(temperatures) 
-        ntemp=n_elements(temperatures)
+    rrstates=params.rec_fits[0].rrstates
+    rrcoeffs=params.rec_fits[0].rrcoeffs
+    drstates=params.rec_fits[0].drstates
+    drcoeffs_c=params.rec_fits[0].drcoeffs_c
+    drcoeffs_e=params.rec_fits[0].drcoeffs_e
 
-        if n_elements(density) gt 0 and n_elements(pressure) gt 0 then begin 
-           err_msg='% CH_CALC_IONEQ: ERROR, either density or pressure must be specified'
-           print,err_msg & return,-1
-        end
+    
+    ; calculate by default all elements- 
+    calculate_iz=indgen(30)+1
+    
+    ; determine which elements are to be included in the calculation
+    
+    ; check which elements are present in the masterlist         
+    available_iz_ions=intarr(n_elements(model_ions))
+    for iion=0,n_elements(model_ions)-1 do begin 
+      convertname,model_ions[iion],iz,ion
+      available_iz_ions[iion]=iz
+    end
+    
+    available_iz=available_iz_ions[rem_dup(available_iz_ions)]
+
+    ; let user know whether all elements are part of advanced model
+    for ii=0,n_elements(requested_iz)-1 do begin
+      index=where(available_iz eq requested_iz[ii],nn)
+      if nn eq 0 then begin
+        warning_msg=[warning_msg,'% CH_CALC_IONEQ WARNING: requested element '+$
+          zlabl[requested_iz[ii]-1]+' not available in current advanced model']
+        if verbose then print,warning_msg 
+      endif
+    endfor 
+
+    ; the final list of elements included in the ion balance calculation
+    ; for which advanced models will be calculated
+    requested_iz=requested_iz[sort(requested_iz)] 
+    
+  endif else begin           ; end of setup for advanced model
+    
+    ; setup for when advanced models are not requested
+    if keyword_set(ct) then begin
+      err_msg='% CH_CALC_IONEQ: ERROR, charge transfer can only be included in the advanced models'
+      print,err_msg & return,-1
+    endif
+    
+    calculate_iz=indgen(30)+1 ; calculate the zero density of all elements
+    
+  endelse
+
+     
+  ; initialise the standard CHIANTI array - main difference is that
+  ; this is an array of double-precision numbers
+  ioneq_data=dblarr(ntemp, 30,31)
+  
+  ; begin retrieving ionisation and recombination rates
+  for iiz=0,n_elements(calculate_iz)-1 do begin
+
+    z=calculate_iz[iiz]
+    ion_rate=fltarr(ntemp,z+2)
+    rec_rate=fltarr(ntemp,z+2)
+    ;GDZ: did we request to calculate this?
+    ; RPD: no we didn't need it before but do now because
+    ; we're calculating all elements. I've moved the line from checking it for 
+    ; every ion to checking once for the element
+    index_req=where(requested_iz eq z, nreq)
+
+    for ion=0,z do begin
+
+        zion2name,z,ion+1,gname
+        if verbose then print,gname
         
         if keyword_set(advanced_model) then begin
-           if n_elements(density) eq 0 and n_elements(pressure) eq 0 then begin 
-              err_msg='% CH_CALC_IONEQ: ERROR, either density or pressure must be specified for the advanced model'
-              print,err_msg & return,-1
-           end
-        endif
 
-        if n_elements(density) eq 1 then begin 
-           densities=dblarr(ntemp)+double(density)
-           ne_pe_comment='Model used constant density='+string(density)
-        endif else if n_elements(density) gt 1 then begin
-           if n_elements(density) ne ntemp then begin 
-              err_msg='% CH_CALC_IONEQ: ERROR, density array provided is not consistent with temperature array'
-              print,err_msg & return,-1
-           endif else densities=double(density)
+          ; if ion is in advanced model list and we requested it,
+          ; get initial-level resolved rates:
+          ionmatch=where(params.model_ions eq gname)
+          ionmatch=ionmatch[0] ; GDZ needed !
+          
+          if ionmatch gt -1 and nreq eq 1 then begin
 
-        endif else if n_elements(density) eq 0 then begin 
-           if n_elements(pressure) gt 1 then begin 
-              err_msg='% CH_CALC_IONEQ: ERROR, pressure array provided but only scalar allowed'
-              print,err_msg & return,-1
-           endif else if n_elements(pressure) eq 1 then begin
-              densities=double(pressure[0])/temperatures
-              ne_pe_comment='Model used constant pressure='+string(pressure)
-           endif else $
-              if keyword_set(verbose) then print,'% CH_CALC_IONEQ: calculating the zero-density case...'
-        endif 
-        
-     endelse  
-                                ; end of tests on inputs
+            ; define the maximum number of levels to calculate the populations
+            if ions_nlevels[ionmatch] gt 0 then $
+              n_levels=ions_nlevels[ionmatch] else n_levels=999 ; GDZ
+            
+            ; find recombination coefficients and indices of metastable levels for ion
+            rrind=where(rrstates[0,*] eq z and rrstates[1,*] eq z-ion,nrr)
+            drind=where(drstates[0,*] eq z and drstates[1,*] eq z-ion,ndr)
 
+            ; if ion not found in recombination list
+            if nrr eq 0 and ndr eq 0 then begin
+              ; if it is a neutral
+              if ion eq 0 then begin
+                metastable_levels,gname,metas,quiet=quiet
+                meta_index=where(metas eq 1)+1
+                rec_coeffs=fltarr(24,n_elements(meta_index))
+              ; otherwise it cannot be included in advanced model
+              endif else begin 
+                err_msg='% CH_CALC_IONEQ: ERROR, '+gname+$
+                  'cannot be included in the advanced model, please remove from list of model ions'
+                print,err_msg & return,-1
+              end
+            ; for those with RR data but not DR
+            endif else if nrr gt 0 and ndr eq 0 then begin
+              meta_index=reform(rrstates[2,rrind])
+              rec_coeffs=[rrcoeffs[*,rrind],fltarr(9,nrr),fltarr(9,nrr)]
+            ; for all others
+            endif else if nrr gt 0 and ndr gt 0 then begin
+              ; check there is not an inconsistency of metastable indices in recombination
+              ; table for the two sets of recombination coefficients
+              if array_equal(rrstates[2,rrind],drstates[2,drind]) eq 1 then begin
+                meta_index=reform(rrstates[2,rrind])
+                rec_coeffs=[rrcoeffs[*,rrind],drcoeffs_c[*,drind],drcoeffs_e[*,drind]]
+              endif else begin
+                err_msg='% CH_CALC_IONEQ: ERROR, Metastable level indices for '+gname+$
+                  ' in RR data do not match those in DR data'
+                print,err_msg & return,-1
+              end
+            endif  
 
-; now retrieve the global parameters used throughout the advanced model
-     if keyword_set(advanced_model) then begin
+            ; call the sub-routine to calculate overall ionisation and recombination rates
+            if keyword_set(ct) then $
+              rates_tr=ch_adv_model_rates(gname,meta_index,temperatures,densities,rec_coeffs,$
+                model_atm=params.ct_model,verbose=verbose,n_levels=n_levels) $
+            else rates_tr=ch_adv_model_rates(gname,meta_index,temperatures,densities,$
+              rec_coeffs,verbose=verbose,n_levels=n_levels)
 
-        ion_comments=''
+            ion_rate(*,ion)=rates_tr.final_ioniz[*]
+            rec_rate(*,ion)=rates_tr.final_recomb[*]
 
-        if keyword_set(ct) then begin
-           if n_elements(atmosphere_file) eq 0 then begin
-              atmosphere_file=ch_get_file(path=concat_dir(concat_dir(concat_dir(!xuvtop,'ancillary_data'),$
-                                                                     'advanced_models'),'model_atmospheres'),filter='*.dat',tit='Select an atmosphere file') 
-           endif else begin
-              if not file_exist(atmosphere_file) then begin
-                 err_msg='% CH_CALC_IONEQ: ERROR, input atmosphere file does not exist'
-                 print,err_msg & return,-1
-              endif
-           endelse
-        endif   
-
-        params=ch_adv_model_setup(temperatures,ct=ct,atmosphere_file=atmosphere_file,he_abund=he_abund)
-
-        model_ions=params.model_ions
-        ions_nlevels=params.ions_nlevels ; GDZ
-
-        rrstates=params.rec_fits[0].rrstates
-        rrcoeffs=params.rec_fits[0].rrcoeffs
-        drstates=params.rec_fits[0].drstates
-        drcoeffs_c=params.rec_fits[0].drcoeffs_c
-        drcoeffs_e=params.rec_fits[0].drcoeffs_e
-
-        
-; calculate by default all elements- 
-        calculate_iz=indgen(30)+1
-        
-; determine which elements are to be included in the calculation
-        
-                                ; check which elements are present in the masterlist         
-        available_iz_ions=intarr(n_elements(model_ions))
-        for iion=0,n_elements(model_ions)-1 do begin 
-           convertname,model_ions[iion],iz,ion
-           available_iz_ions[iion]=iz
-        end
-        
-        available_iz=available_iz_ions[rem_dup(available_iz_ions)]
-
-                                ; let user know whether all elements are part of advanced model
-        for ii=0,n_elements(requested_iz)-1 do begin
-           index=where(available_iz eq requested_iz[ii],nn)
-           if nn eq 0 then begin
-              warning_msg=[warning_msg,'% CH_CALC_IONEQ WARNING: requested element '+$
-                           zlabl[requested_iz[ii]-1]+' not available in current advanced model']
-              if verbose then print,warning_msg 
-           endif
-        endfor 
-
-; the final list of elements included in the ion balance calculation
-; with the advanced model option:
-        
-        requested_iz=requested_iz[sort(requested_iz)] 
-
-        
-     endif else begin           ; end of setup for advanced model
-        
-                                ; setup for when advanced models are not requested
-        if keyword_set(ct) then begin
-           err_msg='% CH_CALC_IONEQ: ERROR, charge transfer can only be included in the advanced models'
-           print,err_msg & return,-1
-        endif
-        
-        calculate_iz=indgen(30)+1 ; calculate the zero density of all elements
-        
-     endelse
-
-     
-                                ; initialise the standard CHIANTI array - main difference is that
-                                ; this is an array of double-precision numbers
-     ioneq_data=dblarr(ntemp, 30,31)
-     
-                                ; begin retrieving ionisation and recombination rates
-     for iiz=0,n_elements(calculate_iz)-1 do begin
-
-        z=calculate_iz[iiz]
-        ion_rate=fltarr(ntemp,z+2)
-        rec_rate=fltarr(ntemp,z+2)
-
-        for ion=0,z do begin
-
-           zion2name,z,ion+1,gname
-           if verbose then print,gname
-           
-           if keyword_set(advanced_model) then begin
-
-;GDZ: did we request to calculate this?
-              index_req=where(requested_iz eq z, nreq)
+            ion_comments=[ion_comments,gname+' included in density effects model']
+            if keyword_set(verbose) then print,gname+' included in density effects model'
               
-; if ion is in advanced model list and we requested it,
-;  get initial-level resolved rates:
+          endif else begin
+
+            ; for ions not in advanced model list use ground level ionisation and recombination rates
+            if ion+1 le z then ion_rate(*,ion)=ioniz_rate(gname,temperatures,verbose=verbose)
+            if ion gt 0 then $
+              if keyword_set(dr_suppression) then $
+                rec_rate(*,ion)=recomb_rate(gname,temperatures,verbose=verbose,density=densities) $
+              else rec_rate(*,ion)=recomb_rate(gname,temperatures,verbose=verbose)
               
-              ionmatch=where(params.model_ions eq gname)
-              ionmatch=ionmatch[0] ; GDZ needed !
-              
-              if ionmatch gt -1 and nreq eq 1 then begin
+          endelse
 
-                                ; define the maximum number of levels to calculate the populations
-                 if ions_nlevels[ionmatch] gt 0 then $
-                    n_levels=ions_nlevels[ionmatch] else n_levels=999 ; GDZ
-                 
-                                ; find recombination coefficients and indices of metastable levels for ion
-                 rrind=where(rrstates[0,*] eq z and rrstates[1,*] eq z-ion,nrr)
-                 drind=where(drstates[0,*] eq z and drstates[1,*] eq z-ion,ndr)
+        ; end of calculating ionisation and recombination rates for advanced models
+        endif else begin
 
-                                ; if ion not found in recombination list
-                 if nrr eq 0 and ndr eq 0 then begin
-                                ; if it is a neutral
-                    if ion eq 0 then begin
-                       metastable_levels,gname,metas,quiet=quiet
-                       meta_index=where(metas eq 1)+1
-                       rec_coeffs=fltarr(24,n_elements(meta_index))
-                                ; otherwise it cannot be included in advanced model
-                    endif else begin 
-                       err_msg='% CH_CALC_IONEQ: ERROR, '+gname+$
-                               'cannot be included in the advanced model, please remove from list of model ions'
-                       print,err_msg & return,-1
-                    end
-                                ; for those with RR data but not DR
-                 endif else if nrr gt 0 and ndr eq 0 then begin
-                    meta_index=reform(rrstates[2,rrind])
-                    rec_coeffs=[rrcoeffs[*,rrind],fltarr(9,nrr),fltarr(9,nrr)]
-                                ; for all others
-                 endif else if nrr gt 0 and ndr gt 0 then begin
-                                ; check there is not an inconsistency of metastable indices in recombination
-                                ; table for the two sets of recombination coefficients
-                    if array_equal(rrstates[2,rrind],drstates[2,drind]) eq 1 then begin
-                       meta_index=reform(rrstates[2,rrind])
-                       rec_coeffs=[rrcoeffs[*,rrind],drcoeffs_c[*,drind],drcoeffs_e[*,drind]]
-                    endif else begin
-                       err_msg='% CH_CALC_IONEQ: ERROR, Metastable level indices for '+gname+$
-                               ' in RR data do not match those in DR data'
-                       print,err_msg & return,-1
-                    end
-                 endif  
+          ; use the coronal approximation for everything if advanced models not requested
+          if ion+1 le z then ion_rate(*,ion)=ioniz_rate(gname,temperatures,verbose=verbose)
+          if ion gt 0 then $
+            if keyword_set(dr_suppression) then $
+              rec_rate(*,ion)=recomb_rate(gname,temperatures,verbose=verbose,density=densities) $
+            else rec_rate(*,ion)=recomb_rate(gname,temperatures,verbose=verbose)
+          
+        endelse
 
-; call the sub-routine to calculate overall ionisation and recombination rates
+    endfor      ; end of obtaining ionisation and recombination rates
 
-                 if keyword_set(ct) then $
-                    rates_tr=ch_adv_model_rates(gname,meta_index,temperatures,densities,rec_coeffs,$
-                                                model_atm=params.ct_model,verbose=verbose,n_levels=n_levels) $
-                 else rates_tr=ch_adv_model_rates(gname,meta_index,temperatures,densities,$
-                                                  rec_coeffs,verbose=verbose,n_levels=n_levels)
+    
+    ; begin calculating ion fractions - original part of Ken Dere's routine
+    ioneq=dblarr(ntemp,z+2)
 
-                 ion_rate(*,ion)=rates_tr.final_ioniz[*]
-                 rec_rate(*,ion)=rates_tr.final_recomb[*]
+    for it=0,ntemp-1 do begin
+      factor=fltarr(z+1)
 
-                 ion_comments=[ion_comments,gname+' included in density effects model']
-                 if keyword_set(verbose) then print,gname+' included in density effects model'
-                 
-              endif  else begin
+      for ion=1,z-1 do begin
+        rat=ion_rate(it,ion)/rec_rate(it,ion)
+        factor(ion)=rat^2+rat^(-2)
+      endfor
 
-; for ions not in advanced model list use ground level ionisation and recombination rates
-                 if ion+1 le z then ion_rate(*,ion)=ioniz_rate(gname,temperatures,verbose=verbose)
-                 if ion gt 0 then $
-                    if keyword_set(dr_suppression) then $
-                       rec_rate(*,ion)=recomb_rate(gname,temperatures,verbose=verbose,density=densities) $
-                    else rec_rate(*,ion)=recomb_rate(gname,temperatures,verbose=verbose)
-                 
-              endelse
+      factor(0)=max(factor)
+      factor(z)=max(factor)
 
-; end of calculating ionisation and recombination rates for advanced models
-           endif else begin
+      idx=where(factor eq min(factor))
 
-                                ; use the coronal approximation for everything if advanced models not requested
-              if ion+1 le z then ion_rate(*,ion)=ioniz_rate(gname,temperatures,verbose=verbose)
-              if ion gt 0 then $
-                 if keyword_set(dr_suppression) then $
-                    rec_rate(*,ion)=recomb_rate(gname,temperatures,verbose=verbose,density=densities) $
-                 else rec_rate(*,ion)=recomb_rate(gname,temperatures,verbose=verbose)
-              
-           endelse
+      most=idx(0)
+      ioneq(it,most)=1.d
 
-                                ; end of obtaining ionisation and recombination rates
-        endfor 
+      ; Get ions above most
+      for ion=most+1,z+1 do begin
+        if rec_rate(it,ion) gt 0. then begin
+          ioneq(it,ion)=ion_rate(it,ion-1)*ioneq(it,ion-1)/rec_rate(it,ion)
+          ;if ioneq(it,ion) lt ioneqmin then ioneq(it,ion)=0.
+        endif else ioneq(it,ion)=0.
+      endfor
+                          ;
+      for ion=most-1,0,-1 do begin
+        ioneq(it,ion)=rec_rate(it,ion+1)*ioneq(it,ion+1)/ion_rate(it,ion)
+        if ioneq(it,ion) lt ioneqmin then ioneq(it,ion)=0.
+      endfor
 
-        
-                                ; begin calculating ion fractions - original part of Ken Dere's routine
-        ioneq=dblarr(ntemp,z+2)
+      ioneq(it,0)=ioneq(it,*)/total(ioneq(it,*))
 
-        for it=0,ntemp-1 do begin
-           factor=fltarr(z+1)
+    endfor                  ; it
 
-           for ion=1,z-1 do begin
-              rat=ion_rate(it,ion)/rec_rate(it,ion)
-              factor(ion)=rat^2+rat^(-2)
-           endfor
-
-           factor(0)=max(factor)
-           factor(z)=max(factor)
-
-           idx=where(factor eq min(factor))
-
-           most=idx(0)
-           ioneq(it,most)=1.d
-
-                                ; Get ions above most
-           for ion=most+1,z+1 do begin
-              if rec_rate(it,ion) gt 0. then begin
-                 ioneq(it,ion)=ion_rate(it,ion-1)*ioneq(it,ion-1)/rec_rate(it,ion)
-                                ;if ioneq(it,ion) lt ioneqmin then ioneq(it,ion)=0.
-              endif else ioneq(it,ion)=0.
-           endfor
-                                ;
-           for ion=most-1,0,-1 do begin
-              ioneq(it,ion)=rec_rate(it,ion+1)*ioneq(it,ion+1)/ion_rate(it,ion)
-              if ioneq(it,ion) lt ioneqmin then ioneq(it,ion)=0.
-           endfor
-
-           ioneq(it,0)=ioneq(it,*)/total(ioneq(it,*))
-
-        endfor                  ; it
-
-        ioneq_data[*, z-1, 0:z]= ioneq[*, 0:z]
-        
-     endfor                     ; loop over z
+    ioneq_data[*, z-1, 0:z]= ioneq[*, 0:z]
+    
+  endfor                     ; loop over z
 
      
-                                ; formats for the output      
-     tformat='('+trim(ntemp)+'f6.2)'
-     iformat='('+trim(ntemp)+'e10.3)'
-     
-                                ; if an output file is requested
-     if n_elements(outname) gt 0 then begin 
-        openw,luw,outname,/get_lun
-        printf,luw,ntemp,30,format='(2i3)'
-        printf,luw,alog10(temperatures),format=tformat
+  ; formats for the output      
+  tformat='('+trim(ntemp)+'f6.2)'
+  iformat='('+trim(ntemp)+'e10.3)'
+  
+  ; if an output file is requested
+  if n_elements(outname) gt 0 then begin 
+    openw,luw,outname,/get_lun
+    printf,luw,ntemp,30,format='(2i3)'
+    printf,luw,alog10(temperatures),format=tformat
 
-        for z=1,30 do begin
-           for ion=0,z do begin
-              printf,luw,z,ion+1, ioneq_data[*,z-1,ion],format='(2i3,'+iformat+')'
-           endfor
-        endfor
-        
-        ion_string=' '
+    for z=1,30 do begin
+      for ion=0,z do begin
+        printf,luw,z,ion+1,ioneq_data[*,z-1,ion],format='(2i3,'+iformat+')'
+      endfor
+    endfor
+    
+    ion_string=' '
 
-        printf,luw,' -1'
-        printf,luw,' ionization equilibrium filename:  ',file_basename(outname)
+    printf,luw,' -1'
+    printf,luw,' ionization equilibrium filename:  ',file_basename(outname)
 
-        if keyword_set(advanced_model) then begin
-           printf,luw,' the following ions have advanced models:'
-           for ii=0,n_elements(ion_comments)-1 do printf,luw,ion_comments[ii]
-           for ii=0,n_elements(ne_pe_comment)-1 do printf,luw,ne_pe_comment[ii]
-        endif
-        
-        printf,luw,' Produced as part of the CHIANTI atomic data base collaboration'
-        datetime=systime()
-        printf,luw,' Created on ',datetime
-        printf,luw,' -1'
-        free_lun,luw
-     
-        if verbose then begin
-           print,'% CH_CALC_IONEQ: the ion fractions have been written to the file'
-           print,'                  '+outname
-        endif
-        
-     endif ; end of writing the file
-     
-     if verbose then begin
-        k=where(temperatures LT 1e4,nk)
-        IF nk GT 0 THEN BEGIN
-           print,'**WARNING**'
-           print,'Ion fractions have been computed below 10^4 K. These values may not be accurate as charge transfer'
-           IF keyword_set(advanced_model) THEN BEGIN
-              IF keyword_set(ct) THEN $
-                 print,'can be significant at low temperatures and this process has not been included for all ions.' $
-              ELSE BEGIN
-                 print,'can be significant at low temperatures and this process has not been included in these ion balances.'
-                 print,'It can be included for some ions by using the keyword /ct.'
-              ENDELSE
-           ENDIF ELSE BEGIN
-              print,'can be significant at low temperatures and this process has not been included in these ion balances.'
-              print,'It can be included for some ions by using the keywords /advanced_model and /ct.'
-           ENDELSE
-        ENDIF 
-     endif
-     
-     t2 = systime(1)
-     print,format='("% CH_CALC_IONEQ: ionization eq.  computed in ",f8.1," seconds")',t2-t1
+    if keyword_set(advanced_model) then begin
+      printf,luw,' the following ions have advanced models:'
+      for ii=0,n_elements(ion_comments)-1 do printf,luw,ion_comments[ii]
+      for ii=0,n_elements(ne_pe_comment)-1 do printf,luw,ne_pe_comment[ii]
+    endif
+    
+    printf,luw,' Produced as part of the CHIANTI atomic data base collaboration'
+    datetime=systime()
+    printf,luw,' Created on ',datetime
+    printf,luw,' -1'
+    free_lun,luw
+  
+    if verbose then begin
+      print,'% CH_CALC_IONEQ: the ion fractions have been written to the file'
+      print,'                  '+outname
+    endif
+    
+  endif ; end of writing the file
+  
+  if verbose then begin
+    k=where(temperatures LT 1e4,nk)
+    IF nk GT 0 THEN BEGIN
+      print,'**WARNING**'
+      print,'Ion fractions have been computed below 10^4 K. These values may not be accurate as charge transfer'
+      IF keyword_set(advanced_model) THEN BEGIN
+        IF keyword_set(ct) THEN $
+          print,'can be significant at low temperatures and this process has not been included for all ions.' $
+        ELSE BEGIN
+          print,'can be significant at low temperatures and this process has not been included in these ion balances.'
+          print,'It can be included for some ions by using the keyword /ct.'
+        ENDELSE
+      ENDIF ELSE BEGIN
+        print,'can be significant at low temperatures and this process has not been included in these ion balances.'
+        print,'It can be included for some ions by using the keywords /advanced_model and /ct.'
+      ENDELSE
+    ENDIF 
+  endif
+  
+  t2 = systime(1)
+  print,format='("% CH_CALC_IONEQ: ionization eq.  computed in ",f8.1," seconds")',t2-t1
 
-     return, ioneq_data  
+  return, ioneq_data  
      
   END

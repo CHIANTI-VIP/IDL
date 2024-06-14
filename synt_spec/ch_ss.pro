@@ -540,7 +540,7 @@
 ;
 ;       v.24, 10 May 2024, Giulio Del Zanna
 ;          added the level indices of the transitions.
-;       v.25 15 May 2024  Giulio Del Zanna
+;       v.25 13 June 2024  Giulio Del Zanna
 ;          Major rewrite for version 11.
 ;
 ; TO DO LIST:
@@ -2379,7 +2379,7 @@ if min(iso_logt) lt min(logt_i) or max(iso_logt) gt max(logt_i) then $
          endelse 
           
                         
-         ch_synthetic, int_xrange[0], int_xrange[1], output=tran $
+         ch_synthetic, int_xrange[0], int_xrange[1], output=tran, $
            err_msg=err_msg, msg=msg, $
            pressure=pressure, density=density, model_file=model_file, $
            all=theor_lines,sngl_ion=list_ions, photons=photons, $ 
