@@ -190,13 +190,12 @@
 ;	IONEQ_NAME:  Name of the ionization equilization name to use.  If not
 ;		     passed, then the user is prompted for it, unless the
 ;                    ADVANCED_MODEL is used.
+;
 ;                    **** Note: if (by default) the ADVANCED_MODEL is used,
 ;                       IONEQ_NAME will be the name of the file where the new
 ;                       ion charge states are written. 
 ;
-;       ADVANCED_MODEL: include density-dependent (and CT) effects.
 ;
-;       CT: include charge transfer (CT) in advanced models
 ;
 ;       IONEQ_LOGT: an array of log T [K] values, defining the grid for the
 ;                   calculation, unless the isothermal option is called, or
@@ -208,13 +207,6 @@
 ;                      Avrett E.H., Loeser R., 2008, ApJ, 175, 229
 ;
 ;       HE_ABUND:  The total helium abundance relative to hydrogen. 
-;
-;       NO_AUTO: If set, then the autoionization rates (contained in
-;                the .auto file) are not read. The autoionization states are not
-;           included in the calculations, i.e. a single ion rather than the
-;           two-ion model  introduced in version 9 is calculated. This speeds
-;           up the calculations without affecting the lines from the bound states.
-;
 ;
 ;
 ;       DEM_NAME:  Name of the DEM file to used.  If not passed, then the user
@@ -427,9 +419,6 @@
 ;       NO_RREC: If set, do not read the level-resolved radiative
 ;                recombination (RR) files.
 ;
-;       NO_AUTO: If set, do not include autoionization in the level population
-;                calculations (this will speed up routine, but X-ray line
-;                intensities may be affected).
 ;
 ;       LOOKUP:  If set, then routine will attempt to use the CHIANTI
 ;                lookup tables to obtain level populations, rather
@@ -445,6 +434,20 @@
 ;
 ;       LAPACK:   If set, then the LAPACK matrix inversion routine
 ;                 (la_invert) for pop_solver will be used. 
+;
+;       ADVANCED_MODEL: include density-dependent (and CT) effects.
+;
+;       CT: include charge transfer in advanced models
+;
+;       DR_SUPPRESSION: Switch on DR suppression from Nikolic et al (2018) for all ions 
+;              not included in the advanced models. The comparison with Summers (1974) suppression
+;              has not been checked for other elements when preparing the models.
+;
+;       NO_AUTO: If set, then the autoionization rates (contained in
+;                the .auto file) are not read. The autoionization states are not
+;           included in the calculations, i.e. a single ion rather than the
+;           two-ion model  introduced in version 9 is calculated. This speeds
+;           up the calculations without affecting the lines from the bound states.
 ;
 ; CALLS:  CH_GET_FILE
 ;          many CHIANTI standard routines,  including:
@@ -755,7 +758,12 @@
 ;          v.59, 14 June 2024, Giulio Del Zanna
 ;           clarified warning/error messages.
 ;
-;   VERSION 59
+;          v.60, 3-Jul-2024, GDZ, fixed the logt_isothermal case for the
+;                advanced model, which was previously commented.
+;                Also added the dr_suppression keyword.
+;
+;
+;   VERSION 60 
 ;-
 PRO info_progress, pct,lastpct,pctage, pct_slider_id,$
            interrupt_id,halt,quiet, snote,  group=group
@@ -789,7 +797,7 @@ PRO ch_synthetic, wmin, wmax, output=output, err_msg=err_msg, msg=msg, $
                   noionrec=noionrec, no_rrec=no_rrec, lookup=lookup, $
                   regular=regular, sparse=sparse, lapack=lapack, $
                   no_auto=no_auto,ioneq_logt=ioneq_logt, advanced_model=advanced_model,ct=ct,$
-                  atmosphere=atmosphere,he_abund=he_abund
+                  atmosphere=atmosphere,he_abund=he_abund,dr_suppression=dr_suppression
 
 ;
   if n_params() lt 2 then begin
@@ -1071,10 +1079,15 @@ PRO ch_synthetic, wmin, wmax, output=output, err_msg=err_msg, msg=msg, $
      
      IF n_elements(ioneq_name) EQ 0 then begin
         print, '% CH_SYNTHETIC: ADVANCED ionization model WARNING: *** YOU HAVE NOT DEFINED THE NAME OF THE IONEQ FILE ...'
-        print, '% CH_SYNTHETIC: DEFAULT NAME THAT WILL BE WRITTEN in the working directory IS: chianti_adv.ioneq'
-        print, '% CH_SYNTHETIC:  do not move this file as it will be read by other routines later on, '
-        print, ' when you create a spectrum'
-        ioneq_name=  concat_dir(curdir() , 'chianti_adv.ioneq')
+
+        pp= str_sep(anytim(!stime, /vms),' ',/trim)
+        ioneq_name=  'ch_adv_'+pp[1]+'-'+strmid(pp[2],0,8)+'.ioneq'
+        
+        print, '% CH_SYNTHETIC: DEFAULT NAME THAT WILL BE WRITTEN in the working directory IS: '+ioneq_name
+        print, '% CH_SYNTHETIC:  do not move this file as it will be read by other routines later on, when you create a spectrum '
+        print, ' '
+        
+       
      endif else begin
         IF  file_exist(ioneq_name)   THEN BEGIN 
            err_msg = '% CH_SYNTHETIC ERROR, ADVANCED ionization model option requested but the ioneq file '+ioneq_name+' already exist, give it  a different name!  -- EXIT'
@@ -1082,13 +1095,29 @@ PRO ch_synthetic, wmin, wmax, output=output, err_msg=err_msg, msg=msg, $
            return
         END 
      endelse
+
+     IF n_elements(logt_isothermal) GT 0  THEN BEGIN
+        
+      if  n_elements(ioneq_logt) eq 0 then begin
+               ioneq_logt = logt_isothermal 
+            if verbose then print,'% CH_SYNTHETIC: calculating G(T) with the input logt_isothermal'
+         endif else begin 
+             err_msg = '% CH_SYNTHETIC ERROR: input Temperature via ioneq_logt '+$
+              ' cannot be given if logt_isothermal is defined - EXIT '
+            print,err_msg
+            return
+         endelse 
+      endif else begin   
      
+; we have asked for the advanced model but we have not supplied the input temperatures:     
      if  n_elements(ioneq_logt) eq 0 then begin
         ioneq_logt =findgen(81)/20.0+4.0
         if verbose then print,'% CH_SYNTHETIC: calculating G(T) in the log T=4-8 range'
-     end                  
-  endelse   
-
+     end
+     
+  endelse      
+   endelse ; advanced ioneq model 
+  
   n_ioneq_logt=n_elements(ioneq_logt)
   
 ; PRY, 31-Jan-2018
@@ -1096,7 +1125,6 @@ PRO ch_synthetic, wmin, wmax, output=output, err_msg=err_msg, msg=msg, $
 ;  from within pop_solver.
 ;
   IF NOT keyword_set(noprot) THEN add_protons=1 ELSE add_protons=0
-
 
 
   IF n_elements(logt_isothermal) EQ 0  THEN BEGIN
@@ -1200,32 +1228,10 @@ PRO ch_synthetic, wmin, wmax, output=output, err_msg=err_msg, msg=msg, $
            END  
         END   
      ENDCASE   
-  ENDIF ELSE BEGIN              ; log T isothermal 
+  ENDIF ;  ELSE BEGIN              ; log T isothermal 
 
-;;    stop
-     
-;;    if  keyword_set(advanced_model)  then begin 
-     
-;; ; GDZ- ADVANCED model:
-;; ; if input temperature array not defined:
-;;             if  n_elements(ioneq_logt) eq 0 then begin
-;;                ioneq_logt = logt_isothermal 
-;;             if verbose then print,'% CH_SYNTHETIC: calculating G(T) with the input logt_isothermal'
-;;          endif else begin 
-;; ;
-;;              err_msg = '% CH_SYNTHETIC ERROR: input Temperature via ioneq_logt '+$
-;;               ' cannot be given if logt_isothermal is defined - EXIT '
-;;             print,err_msg
-;;             return
-;;          endelse
-;;       end 
-     
-;;    n_ioneq_logt=n_elements(ioneq_logt)
-
-  END   
 ; now we have ioneq_logt defined, one way or the other. 
 ;------------------------------------------------------
-
 
   
 ;check that we have some overlap in T:
@@ -1377,7 +1383,7 @@ PRO ch_synthetic, wmin, wmax, output=output, err_msg=err_msg, msg=msg, $
                            /advanced_model, ct=ct,$
                            elements=elements,$
                            atmosphere=atmosphere,he_abund=he_abund,verbose=verbose,$
-                           err_msg =err_calc, warning_msg=warning_msg)
+                           err_msg =err_calc, warning_msg=warning_msg,dr_suppression=dr_suppression)
 
      
      if err_calc ne '' then begin

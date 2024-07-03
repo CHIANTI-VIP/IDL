@@ -124,6 +124,9 @@
 ;           two-ion model  introduced in version 9 is calculated. This speeds
 ;           up the calculations without affecting the lines from the bound states.
 ;
+;       DR_SUPPRESSION: Switch on DR suppression from Nikolic et al (2018) for all ions 
+;              not included in the advanced models. The comparison with Summers (1974) suppression
+;              has not been checked for other elements when preparing the models.
 ;
 ; Calls       : 
 ;		ch_synthetic
@@ -212,7 +215,9 @@
 ;           up the calculations without affecting the lines from the bound states.
 ;           Added passing ioneq_name
 ;
-; VERSION     :    V.14
+;       v.15, 1-Jul-2024, GDZ, added  dr_suppression
+;
+; VERSION     :    V.15
 ;
 ;
 ;-        
@@ -222,7 +227,7 @@ pro get_contributions,input, out,  output_name=output_name,density=density, pres
                       cut_contrib=cut_contrib,n_ch=n_ch,$
                       rphot=rphot, radtemp=radtemp,RADFUNC=RADFUNC, ioneq_name=ioneq_name,$
                 no_auto=no_auto,ioneq_logt=ioneq_logt, advanced_model=advanced_model,ct=ct,$
-                atmosphere=atmosphere,he_abund=he_abund
+                atmosphere=atmosphere,he_abund=he_abund,dr_suppression=dr_suppression
 
 
 ;ON_ERROR, 2
@@ -301,7 +306,7 @@ ch_synthetic, w1, w2, output=output_ch, err_msg=err_msg, msg=msg, $
               /all, ioneq_name=ioneq_name, $
               noprot=noprot, rphot=rphot, radtemp=radtemp,RADFUNC=RADFUNC, /goft,$
               no_auto=no_auto,ioneq_logt=ioneq_logt, advanced_model=advanced_model,ct=ct,$
-              atmosphere=atmosphere,he_abund=he_abund
+              atmosphere=atmosphere,he_abund=he_abund,dr_suppression=dr_suppression
 
 
 n_dem_temp=n_elements(ioneq_logt)

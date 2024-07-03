@@ -267,10 +267,10 @@
 ;                Completed density variable being output when using a model file.
 ;
 ;     v.10, 24 May 2024, GDZ - Completed routine to write output file.
-;
 ;     v.11, 29 May 2024, RPD - Sundry changes to formatting, moved index_req check to element stage
+;     v.12, 3-July-2024, GDZ - changed the definition of the output ionization equilibrium file.
 ;
-; VERSION    v.11
+; VERSION    v.12
 ;-
 
 
@@ -294,25 +294,21 @@ function ch_calc_ioneq,temperatures,outname=outname,elements=elements,density=de
   ; By default write an ion equilibrium file.
   if n_elements(outname) gt 0 then begin
 
-    if file_exist(outname) then begin
-      outname  ='adv_'+$
-        trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
+     if file_exist(outname) then begin
+         pp= str_sep(anytim(!stime, /vms),' ',/trim)
+       outname=  'ch_adv_'+pp[1]+'-'+strmid(pp[2],0,8)+'.ioneq'
+    
       print,'% CH_CALC_IONEQ: requested ionization file exists. Writing output to '+outname
-    endif else begin
-      if file_exist('adv.ioneq') then begin
-        outname='adv_'+$
-          trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
-      endif else outname='adv.ioneq'
-    endelse 
-
-  endif else begin
+    end
+     
+   endif else begin
  
-    if file_exist('adv.ioneq') then begin
-      outname='adv_'+$
-        trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
-    endif else outname='adv.ioneq'
+      pp= str_sep(anytim(!stime, /vms),' ',/trim)
+       outname=  'ch_adv_'+pp[1]+'-'+strmid(pp[2],0,8)+'.ioneq'
+      ;; outname='adv_'+$
+      ;;   trim(string(SYSTIME(/JULIAN, /UTC), format='(f14.4)'))+'.ioneq'
 
-    if verbose then  print,'% CH_CALC_IONEQ: Writing output to '+outname
+     print,'% CH_CALC_IONEQ: Writing output to '+outname
  
   end
   

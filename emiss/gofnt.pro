@@ -95,6 +95,10 @@
 ;
 ;       CT: include charge transfer in advanced models
 ;
+;       DR_SUPPRESSION: Switch on DR suppression from Nikolic et al (2018) for all ions 
+;              not included in the advanced models. The comparison with Summers (1974) suppression
+;              has not been checked for other elements when preparing the models.
+;
 ;       PHOTONS:  sets output in photons/s
 ;
 ;       NOABUND: If set, the G(T)'s are not multiplied by the abundance 
@@ -242,8 +246,10 @@
 ;           are available, then in non-interactive mode by passing the
 ;           lower_levels, upper_levels. 
 ;
+;       V.20, 3-Jul-2024, GDZ
+;           added DR suppression
 ;
-; VERSION     :    v.19, 24 October 2023
+; VERSION     :    v.20
 ;
 ;-
 
@@ -255,7 +261,7 @@ pro gofnt, ions, wmin, wmax, temperature, gof, description,$
            lower_levels=lower_levels, upper_levels=upper_levels, $
            arcsecs=arcsecs, VERBOSE=VERBOSE, logt0=logt0, value=value,$
            ioneq_logt=ioneq_logt, advanced_model=advanced_model,ct=ct,$
-           atmosphere=atmosphere,he_abund=he_abund
+           atmosphere=atmosphere,he_abund=he_abund,dr_suppression=dr_suppression
   
 
 on_error, 2
@@ -295,7 +301,7 @@ ch_synthetic, wmin, wmax, output=TRANSITIONS,  err_msg=err_msg, $
   photons=photons, verbose=verbose, /goft, noprot=noprot, $
   rphot=rphot, radtemp=radtemp,$
            ioneq_logt=ioneq_logt, advanced_model=advanced_model,ct=ct,$
-           atmosphere=atmosphere,he_abund=he_abund
+           atmosphere=atmosphere,he_abund=he_abund,dr_suppression=dr_suppression
 
 
 IF err_msg NE '' THEN BEGIN 
