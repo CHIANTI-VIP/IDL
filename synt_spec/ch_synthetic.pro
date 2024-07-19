@@ -1731,7 +1731,7 @@ PRO ch_synthetic, wmin, wmax, output=output, err_msg=err_msg, msg=msg, $
 ; PRY, 12-May-2023: the lookup section has been moved earlier.
 ; GDZ, added verbose          
 ;---------------------------------------------------------
-
+       
            IF keyword_set(no_lookup) THEN BEGIN
               pop_solver, input,temp,dens,pops,/pressure,radfunc=radfunc, frac_cutoff=frac_cutoff, $
                           regular=regular, sparse=sparse, lapack=lapack,verbose=verbose

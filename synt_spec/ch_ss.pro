@@ -542,13 +542,14 @@
 ;          added the level indices of the transitions.
 ;       v.25 13 June 2024  Giulio Del Zanna
 ;          Major rewrite for version 11.
+;       v.26 19 July 2024 GDZ, fixed the bug when calculating the isothermal option.
 ;
 ; TO DO LIST:
 ;           Control the range of Angstroms when clicking
 ;           kev
 ;           Allow plots in intensities instead of intensities A-1
 ;
-; VERSION     :  V.25
+; VERSION     :  V.26
 ;
 ;-
 PRO restore_spectrum
@@ -2350,7 +2351,7 @@ if min(iso_logt) lt min(logt_i) or max(iso_logt) gt max(logt_i) then $
 
          IF all_ions_yn THEN delvarx, list_ions 
 
-         IF  isothermal_flag EQ 1 THEN delvarx, dem_name  ELSE $
+         IF  isothermal_flag EQ 1 THEN delvarx, dem_name,ioneq_logt  ELSE $
            delvarx, iso_logt, iso_logem
 
          WIDGET_CONTROL, state.plot_rat, GET_VALUE=plot_rat_id ,  sensitive=1 
