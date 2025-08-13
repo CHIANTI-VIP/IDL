@@ -1,80 +1,35 @@
-
-FUNCTION GET_ATOMIC_WEIGHT, IZ
 ;+
-; PROJECT:  CHIANTI
+; PROJECT:
 ;
-;       CHIANTI is an atomic database package for the calculation of
-;       continuum and emission line spectra from astrophysical plasmas. It is a 
-;       collaborative project involving the Naval Research Laboratory
-;       (Washington DC, USA), the Arcetri Observatory (Firenze, Italy), and the
-;       Cambridge University (United Kingdom).
+;        CHIANTI-VIP (Virtual IDL and Python) is  a member of the CHIANTI family
+;        mantained by Giulio Del Zanna, to develop additional features and
+;        provide them to the astrophysics community.
+;        Contributions via github are welcomed. 
 ;
-;
-; NAME:
-;	GET_ATOMIC_WEIGHT
-;
+; NAME: get_atomic_weight 
 ;
 ; PURPOSE:
 ;
-;       to produce  an atomic weight. 
-;
-; PROCEDURE:
-;
-;
-; This routine converts the ion atomic number into an atomic weight. Where 
-; an element has more than one isotope, the weight is that of the most 
-; common.
-;
-; I've written this routine in order to apply a thermal broadening to 
-; lines in a CHIANTI synthetic spectrum (see routine make_chianti_spec.pro).
-;
-;
-; CALLING SEQUENCE:
-;
-;       IDL>
-;
-; EXAMPLES:
-;
-; INPUTS:
-;        IZ 
-;
-; OPT. INPUTS :
-;
-; OUTPUTS:
-;       the atomic weight
-;
-; OPTIONAL OUTPUTS:
-;
-; KEYWORDS:
-;
-; CALLS: 
-;
-; COMMON:
+; Returns the average atomic weight or mass (in grams or kilograms) of an element.
 ;
 ; RESTRICTIONS:
-;            I go up to zinc (iz=30)
+;            Up to zinc (iz=30)
+;
+;  VERSION     : V 1,  24-May-2022 Giulio Del Zanna (GDZ) 
 ;
 ;
-; SIDE EFFECTS:
-;
-; CATEGORY:
-;	
-;	synthetic spectra
-;
-;
-; PREV. HIST. :
-;
-; WRITTEN     : 
-;       Ver.1, 22-Jun-00, Peter Young (PRY)
-;
-; MODIFICATION HISTORY:
-;
-;  VERSION     : V 1, 22-Jun-00, Peter Young (PRY)
-;
+; http://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=
 ;-
 
-weights = [1,4,7,9,11,12,14,16,19,20,23,24,27,28,31,32,35,40,39,40,$
-           45,48,51,52,55,56,59,58,63,64] 
+
+FUNCTION  get_atomic_weight, iz
+
+weights = [1.00794, 4.002602, 6.941, 9.0122, 10.811, 12.0107, 14.0067, $
+15.9994, 18.9984, 20.179, 22.98977, 24.3050, 26.9815, 28.086, $
+30.9738, 32.065, 35.453, 39.948, 39.0983, 40.078, 44.956, $
+47.90, 50.9414, 51.996, 54.9380, 55.845,$  ;' Fe !
+ 58.9332, 58.6934, 63.546, 65.37]
+
 
 RETURN, weights[iz-1]
 

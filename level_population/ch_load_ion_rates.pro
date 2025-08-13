@@ -1,10 +1,12 @@
-function ch_load_ion_rates, input, temp, n_lev=n_lev, $
-                            radfunc=radfunc, abund_file=abund_file, ioneq_file=ioneq_file, $ 
-                            PATH=PATH, NOPROT=NOPROT, RPHOT=RPHOT, RADTEMP=RADTEMP,$
-                            sum_mwl_coeffs=sum_mwl_coeffs, no_auto=no_auto, verbose=verbose,$
-                            wvlmin=wmin,wvlmax=wmax, index_wgfa=anylines,obs_only=obs_only,$
-                            noionrec=noionrec, no_rrec=no_rrec
 ;+
+;
+; PROJECT:
+;
+;        CHIANTI-VIP (Virtual IDL and Python) is  a member of the CHIANTI family
+;        mantained by Giulio Del Zanna, to develop additional features and
+;        provide them to the astrophysics community.
+;        Contributions via github are welcomed. 
+;
 ; NAME:
 ;      CH_LOAD_ION_RATES
 ;       
@@ -54,6 +56,100 @@ function ch_load_ion_rates, input, temp, n_lev=n_lev, $
 ;
 ;	PATH	If specified, the routine will look for the atomic data in 
 ;		the PATH directory, rather than in the CHIANTI database
+;
+;       RPE
+;               An IDL structure containing information to be passed
+;               to the routines. The required tags currently are:
+;
+;        .gname
+;               e.g. 'fe_13'
+;
+;        .model 
+;               1 for Maxwellian isotropic;
+;               2 for bi-Maxwellian.
+;
+;        if RPE.model = 1:
+;
+;        .Tion
+;               the  ion temperature [K], from which 
+;               thermal_v  is calculated:
+;               The thermal velocity in cm/s, i.e. the most probable
+;               speed of the Maxwellian distribution of the ion
+;               velocities: 
+;
+;               thermal_v=sqrt((2*kb*Tion)/(mp*get_atomic_weight(Z))) 
+;
+;               where kb=1.38062e-16  is Boltzmann's constant
+;               (cgs units) 
+;               Tion  is the ion temperature [K]
+;               mp=1.672661e-24 is the proton mass in grams
+;               get_atomic_weight(Z) is the average atomic weight for
+;               the element Z (Z=26 for Iron).
+;
+;  if RPE.model = 2:
+;
+;        .Tpar
+;        .Tperp
+;              The temperatures [K] of the parallel and perpendicular
+;              distributions of the bi-Maxwellian, from which thermal_v
+;              the averaged thermal velocity between the parallel and
+;              perpendicular directions is calculated.
+;
+;        .r
+;              the distance of the scattering point C from Sun centre
+;              in solar radii units.
+;
+;        .u
+;              The outflow velocity [cm/s] assumed to be in the radial
+;              direction from Sun centre (default is 0.)
+;
+;        .psi 
+;              The angle between  the plane of the sky and u (default
+;              is 0.)
+;
+;        .a, .b
+;              
+;             The scattering factor is the angular dependence which
+;             varies with the type of transition. It can be written as
+;
+;             a+b*(n x n')^2
+;
+;             where a, b are coefficients. By default, no angular
+;             dependence is included, i.e. a=1 and b=0.
+;
+;        .radiance_ergs
+;
+;             The averaged disk radiance in ergs cm-2 s-1 sr-1 
+;
+;        .fwhm_a
+;
+;             The FWHM of the line disk profile in Angstroms.
+;             Note: the thermal FWHM in Angstroms is
+;
+;             2*sqrt(alog(2))*thermal_v* lambda_a/c 
+;
+;             where lambda_a is the wavelength in Angstroms and c the
+;             speed of light in cm/s. To this, the non-thermal FWHM should be
+;             added in quadrature. The non-thermal FWHM for coronal
+;             lines from Full-disk irradiance measurements is about 34
+;             km/s (Feldman & Behring 1974) which in Angstroms is:
+;
+;             2*sqrt(alog(2))*34e5* lambda_a/c
+;
+;         ALTERNATIVELY, instead of radiance_ergs, fwhm_a:
+;
+;            .disk_lambda
+;               a wavelength array (Angstroms)
+;
+;           .disk_spectrum
+;               a disk spectrum, in photons cm-2 s-1 sr-1 Angstroms-1
+;
+; OPTIONAL:
+;
+;        RPE.lb_helio_angle, RPE.lb_values
+;
+;             the heliocentric angle (radians, between 0 and !pi/2.)
+;             and the variation of the radiance across the disk, appropriately scaled.
 ;
 ; KEYWORDS:
 ;
@@ -121,17 +217,37 @@ function ch_load_ion_rates, input, temp, n_lev=n_lev, $
 ;        v.10, 5-Mar-2019, Peter Young
 ;          Added sumtst and sum_mwl_coeffs to the output structure as
 ;          they are needed by ch_load_2ion_rates.
+;
 ;        v.11, 12-May-2023, Peter Young
 ;          Added /quiet for call to proton_dens; message about flipping
 ;          transitions only printed if /verbose set.
+;
 ;        v.12, 12-Feb-2025, Peter Young
 ;          Added a comment about the "mult" paramter. No change to code.
 ;
-; VERSION     : 12
+;        v.13, GDZ,  25-May-2022 
+;              added optional input RPE, to add resonant photo-excitation
+;
+;        v.14 , GDZ Major re-write, adding the scattering factors 
+;           18 Jan 2025 
+;
+;        v.15 , GDZ fixed a few minor issues/bugs  18 Jan 2025 
+;        v.16, GDZ, 16 May 2025 changed the input to the RPE
+;
+;        v.17, GDZ, 12 Aug 2025, corrected the values of a few constants..
+;
+; VERSION     :  17,  12 Aug 2025
 ;
 ;-
 
+function ch_load_ion_rates, input, temp, n_lev=n_lev, $
+                            radfunc=radfunc, abund_file=abund_file, ioneq_file=ioneq_file, $ 
+                            PATH=PATH, NOPROT=NOPROT, RPHOT=RPHOT, RADTEMP=RADTEMP,$
+                            sum_mwl_coeffs=sum_mwl_coeffs, no_auto=no_auto, verbose=verbose,$
+                            wvlmin=wmin,wvlmax=wmax, index_wgfa=anylines,obs_only=obs_only,$
+                            noionrec=noionrec, no_rrec=no_rrec, RPE=RPE_input, error=error
 
+  
   IF n_params() LT 2 THEN BEGIN
      print,'Use:  IDL> output = ch_load_ion_rates( input, temp )'
      print,''
@@ -139,6 +255,12 @@ function ch_load_ion_rates, input, temp, n_lev=n_lev, $
      return,-1
   ENDIF 
 
+ IF n_elements(radfunc) NE 0 and n_elements(RPE_input) ne 0 THEN begin 
+     print,'% CH_LOAD_ION_RATES: **** WARNING: both RADFUNC and RPE options have been set ! '
+     print,'% CH_LOAD_ION_RATES: **** WARNING: make sure there is consistency.  '
+  end
+ 
+  
   IF n_elements(abund_file) EQ 0 THEN abund_file=!abund_file
 
 ; If INPUT is not a structure then assume it is an ion name (e.g.,
@@ -155,8 +277,8 @@ if keyword_set(verbose) then quiet=0 else quiet=1
 
      ion_data=ch_setup_ion(gname,rphot=rphot,radtemp=radtemp,noprot=noprot, $
                         ioneq_file=ioneq_file,abund_file=abund_file,path=path, $
-                        quiet=quiet, $
-                          wvlmin=wmin,wvlmax=wmax, index_wgfa=anylines,obs_only=obs_only,noionrec=noionrec ); GDZ ADDED
+                           quiet=quiet,  wvlmin=wmin,wvlmax=wmax, index_wgfa=anylines,$
+                           obs_only=obs_only,noionrec=noionrec ) ; GDZ
 
   endif else begin 
 ion_data=input
@@ -167,7 +289,7 @@ end
 
 
 if  is_number(ion_data) then begin 
-if verbose then print,'% ch_load_ion_rates:  no lines in the selected range !'
+if verbose then print,'% CH_LOAD_ION_RATES:  no lines in the selected range !'
 anylines=-1
 
 return, -1 
@@ -232,6 +354,9 @@ endif
   a_value= ion_data.a_value
   splstr= ion_data.splstr
 
+; GDZ****  a fundamental tag is the level index in the energy file !
+  level_index= ion_data.elvlcstr.data.index
+  
 ; ------
 ; The optional tags are given below.
 ;
@@ -243,8 +368,7 @@ endif
 ; is no longer computed by ch_setup_ion.
 ;
   IF tag_exist(ion_data, 'pe_ratio') THEN  pe_ratio= ion_data.pe_ratio else $
-     pe_ratio=proton_dens(alog10(t),abund_file=abund_file, ioneq_file=ioneq_file, $
-                          /quiet)
+     pe_ratio=proton_dens(alog10(t),abund_file=abund_file, ioneq_file=ioneq_file,/quiet)
 ;
 ; If pe_ratio is in the ion_data structure, then make sure it has the
 ; right size:
@@ -252,8 +376,7 @@ endif
   IF n_elements(pe_ratio) NE n_elements(t) THEN BEGIN
      print,'% WARNING, pe_ratio size does not match temp. It will be recomputed.'
      print,'             ',n_elements(pe_ratio),n_elements(t)
-     pe_ratio=proton_dens(alog10(t), ioneq_file=ioneq_file, abund_file=abund_file, $
-                          /quiet)
+     pe_ratio=proton_dens(alog10(t), ioneq_file=ioneq_file, abund_file=abund_file,/quiet)
   ENDIF
 
 
@@ -279,7 +402,9 @@ endif
   ; is not the multiplicity, but the weight.
   mult=2.*jj+1.
 ;
-  hck=1.98648d-16/1.38062d-16
+; hck=1.98648d-16/1.38062d-16
+  hck=1.986446d-16/1.380649d-16 ; GDZ corrected values
+  
   ryd2cm=109737.31534d
 ;
 
@@ -384,7 +509,7 @@ endif
   i=where(delta_e LT 0.,ni)
   j=where(aa[i] GT 0.,nj)
   IF nj NE 0 THEN BEGIN
-     IF keyword_set(verbose) THEN print,'%WARNING: ['+trim(gname)+'] - '+trim(nj)+$
+     print,'%WARNING: ['+trim(gname)+'] - '+trim(nj)+$
            ' A-values have been assigned to inverse transitions. These have been flipped.'
      k=i[j]
                                 ;
@@ -407,7 +532,8 @@ endif
      aa_temp_transpose=0        ;
   ENDIF 
 
-
+ 
+  
 ;;-----------------------------------------------------------------
 ; The following loads up the photoexcitation (pexc) and stimulated 
 ; emission (stem) arrays. These are combined and put into the AAX
@@ -485,8 +611,262 @@ endif
      aax=pexc+stem
      
   ENDIF
-;;------------------------------------------------------------------[-]
+  
+;;----------------------------------------------------------------------------
+; NEW section to calculate RPE for a single transition using various methods:
+;;----------------------------------------------------------------------------
+; Giulio Del Zanna 
 
+  
+  
+ if  n_elements(RPE_input) gt 0 then begin
+
+; copy the structure that is going to be modified below.
+    
+RPE=RPE_input
+    
+;-- Constants --
+c=2.997925e+10
+kb=1.38062e-16
+h=6.626205e-27
+mp=1.672661e-24
+; rs=7.e+10
+
+    
+    if RPE.model eq 1 or  RPE.model  eq 2 then begin
+       
+ if tag_exist(RPE, 'radiance_ergs') and tag_exist(RPE, 'fwhm_a') then begin
+
+    if rpe.ch_ion_name eq gname then begin
+       
+; include RPE only for  the ion and line requested !
+;---------------------------------------------------
+    
+; wavelength in vacuum at rest, Angstroms: 
+       lambda_0=input.wvl[RPE.lower_level-1,RPE.upper_level-1]
+; 1.d8 /abs(ecmc[RPE.upper_level-1]-emcm[RPE.lower_level-1])
+
+; The A-value is  aa[RPE.upper_level-1, RPE.lower_level-1]
+; also input.a_value[RPE.lower_level-1,RPE.upper_level-1]
+    
+; the wavelength in cm is 1/DE
+       
+;IF keyword_set(verbose) THEN $
+;print, '% CH_LOAD_ION_RATES: thermal FWHM (Angstroms): ',sqrt(4.*alog(2))*lambda_0 * thermal_v/c
+       
+; first find the IDL indices of the levels:
+; Note: the level ordering could be strange.  level_index has the full list - 
+
+ind_lower=where( level_index eq RPE.lower_level,n_lower)
+       if n_lower ne 1 then message, '% CH_LOAD_ION_RATES: ERROR in input lower level number ! '
+; fix this into a scalar:
+ind_lower=ind_lower[0]
+
+       ind_upper=where( level_index eq RPE.upper_level,n_upper)
+       if n_upper ne 1 then message, '% CH_LOAD_ION_RATES: ERROR in input upper level number ! '
+       ind_upper=ind_upper[0]
+       
+; calculate Einstein absorption coefficient B_lu coefficient for the transition:
+; B_lu= gu/gl*Aul * (lambda*1e-8)^3 /(2*h*c) 
+       
+    B_lu= mult[ind_upper]/mult[ind_lower]* $
+          aa[RPE.upper_level-1, RPE.lower_level-1]* (lambda_0*1d-8)^3./(2.*h*c)
+
+IF keyword_set(verbose) THEN $
+print, '% CH_LOAD_ION_RATES: B_lu:'+string(B_lu, format='(e10.2)')
+    
+    if not tag_exist(RPE, 'a') then begin 
+    
+; Calculate the scattering factor for the transition
+; See Hamilton (1947) and Del Zanna (2024)
+    
+    j_l=jj[ind_lower] & j_u=jj[ind_upper]
+    
+    Delta_j = j_u -j_l
+
+    case Delta_j of 
+       1: begin
+          E_1= 1./ 10 *  (26. *j_l^2+ 37 * j_l+10) / ((j_l+1)*(2*j_l+1)) 
+          E_2= 1./ 10 *  ((2*j_l+5)*(j_l+2)) /  ((j_l+1)*(2*j_l+1))             
+
+       end 
+       0:begin
+          E_1= 1./ 10 *  (12.* j_l^2+12*j_l+1)  / (j_l*(j_l+1))
+          E_2= 1./ 10 *  ((2.*j_l-1) *(2*j_l+3)) / (j_l*(j_l+1))
+       end 
+       -1:begin
+          E_1= 1./ 10 *  (26. * j_l^2+ 15*j_l-1) / (j_l*(2*j_l+1))
+          E_2= 1./ 10 *  ((2.*j_l-3)*(j_l-1))  /  (j_l*(2*j_l+1))
+       end       
+            ELSE: BEGIN 
+               print, '% CH_LOAD_ION_RATES: ERROR? Delta J of the requested transition is  ',delta_j
+               print, '% CH_LOAD_ION_RATES:  setting coefficients a=1, b=0'
+               E_1=4./3 & E_2=0.
+            END            
+       endcase
+
+; add the info to the structure:
+    RPE=add_tag(RPE, 3./4*E_1, 'a')
+    RPE=add_tag(RPE, 3./4*E_2, 'b')
+
+    
+    if keyword_set(verbose) then print,'% CH_LOAD_ION_RATES, added RPE scattering: a='+trim(3./4*E_1)+$
+                                       ' b='+trim(3./4*E_2)
+
+ endif 
+    
+; Calculate the Doppler factor:
+    doppler_factor=doppler_factor_theta(lambda_0,  RPE, verbose=verbose)
+
+    if doppler_factor eq -1 then begin 
+       error_msg='% CH_LOAD_ION_RATES: ERROR, RPE  model not recognised ! '
+   print,error_msg
+   return,-1
+end 
+
+; Neglect the stimulated emission.
+; **** Note: the 1/(4.*!pi) factor is *not* included in pop_solver.
+
+; include the RPE rate into the matrix:          
+      aax[ RPE.lower_level-1, RPE.upper_level-1] = (lambda_0*1.d-8)*B_lu *h /(4.*!pi)*doppler_factor
+
+      IF keyword_set(verbose) THEN $
+print, ' RPE rate: ', string((lambda_0*1.d-8)*B_lu *h /(4.*!pi)*doppler_factor, format='(e10.2)')
+      
+   endif 
+      
+ endif   else if tag_exist(RPE, 'disk_lambda') and tag_exist(RPE, 'disk_spectrum') then begin
+      
+; if not defined, only include lines with  A-values above 1e10
+      if  tag_exist(RPE, 'min_avalue') then min_avalue=RPE.min_avalue else begin
+       IF keyword_set(verbose) THEN $
+          print, '% CH_LOAD_ION_RATES: calculating by default RPE for transitions with  A-values > 1e10'
+         min_avalue=1e10
+      end
+
+      
+; select the lines within the input disk spectrum (+/-  0.1 Angstroms).
+; Only include observed lines, as presumably the other ones are very weak: 
+
+; *** cut out all lines above the cut in the number of levels:       
+      index_lines=where( ion_data.wgfastr.wvl ge min(RPE.disk_lambda)+0.1 and $
+                        ion_data.wgfastr.wvl le max(RPE.disk_lambda)-0.1 and $
+                         ion_data.wgfastr.aval gt min_avalue and $
+                         ion_data.wgfastr.lvl1 lt n_levels and $
+                         ion_data.wgfastr.lvl2 le n_levels ,nlines)
+
+      if nlines gt 0 then begin
+        IF keyword_set(verbose) THEN print,'% CH_LOAD_ION_RATES: adding RPE to '+trim(nlines)+' transitions:'
+        IF keyword_set(verbose) THEN print, ion_data.wgfastr[index_lines].wvl
+
+       
+        
+         for ii=0, nlines-1 do begin
+            
+            lambda_0=ion_data.wgfastr[index_lines[ii]].wvl
+
+; first find the IDL indices of the levels:
+; Note: the level ordering could be strange.
+
+       ind_lower=where( level_index eq ion_data.wgfastr[index_lines[ii]].lvl1,n_lower)
+       if n_lower ne 1 then message, '% CH_LOAD_ION_RATES: ERROR in input lower level number ! '
+
+       ind_upper=where( level_index eq  ion_data.wgfastr[index_lines[ii]].lvl2,n_upper)
+       if n_upper ne 1 then message, '% CH_LOAD_ION_RATES: ERROR in input upper level number ! '
+
+; fix these into scalar:       
+ind_lower=ind_lower[0]
+       ind_upper=ind_upper[0]
+              
+; Einstein absorption coefficient:
+            B_lu= mult[ind_upper]/mult[ind_lower]* $
+                  ion_data.wgfastr[index_lines[ii]].aval* (lambda_0*1d-8)^3./(2.*h*c)
+
+
+    if not tag_exist(RPE, 'a') then begin 
+
+       no_input_a=1
+       
+; Calculate the scattering factor for the transition
+; See Hamilton (1947) and Del Zanna (2024)
+    
+    j_l=jj[ind_lower] & j_u=jj[ind_upper]
+    
+    Delta_j = j_u -j_l
+
+    case Delta_j of 
+       1: begin
+          E_1= 1./ 10 *  (26. *j_l^2+ 37 * j_l+10) / ((j_l+1)*(2*j_l+1)) 
+          E_2= 1./ 10 *  ((2*j_l+5)*(j_l+2)) /  ((j_l+1)*(2*j_l+1))             
+
+       end 
+       0:begin
+          E_1= 1./ 10 *  (12.* j_l^2+12*j_l+1)  / (j_l*(j_l+1))
+          E_2= 1./ 10 *  ((2.*j_l-1) * (2*j_l+3)) / (j_l*(j_l+1))
+       end 
+       -1:begin
+          E_1= 1./ 10 *  (26. * j_l^2+ 15*j_l-1) / (j_l*(2*j_l+1))
+          E_2= 1./ 10 *  ((2.*j_l-3)*(j_l-1))  /  (j_l*(2*j_l+1))
+       end       
+             ELSE: BEGIN 
+               print, '% CH_LOAD_ION_RATES: ERROR? Delta J of the requested transition is  ',delta_j
+               print, '% CH_LOAD_ION_RATES:  setting coefficients a=1, b=0'
+               E_1=4./3 & E_2=0.
+            END            
+       endcase
+
+; add the info to the structure:
+    RPE=add_tag(RPE, 3./4*E_1, 'a')
+    RPE=add_tag(RPE, 3./4*E_2, 'b')
+
+    if keyword_set(verbose) then print,'% CH_LOAD_ION_RATES, RPE scattering: a='+trim(3./4*E_1)+$
+                                       ' b='+trim(3./4*E_2)
+
+ endif else no_input_a=0
+
+    
+; Calculate the Doppler factor:
+    doppler_factor=doppler_factor_theta(lambda_0, RPE, verbose=verbose)
+
+    if doppler_factor eq -1 then begin 
+       error_msg='% CH_LOAD_ION_RATES: ERROR, RPE  model not recognised ! '
+   print,error_msg
+   return,-1
+end 
+
+; Neglect the stimulated emission.
+
+    
+; include the PE rate into the matrix:          
+          aax[ion_data.wgfastr[index_lines[ii]].lvl1-1, ion_data.wgfastr[index_lines[ii]].lvl2-1] =$
+             (lambda_0*1.d-8)*B_lu *h /(4.*!pi)*doppler_factor
+
+; we need to reset the scattering factors for the next line           
+          if no_input_a then begin
+             RPE=rem_tag(RPE,'a')
+             RPE=rem_tag(RPE,'b')
+          endif 
+          
+          
+       endfor ; ii list of lines to include 
+         
+      endif 
+      
+   endif else message,'Error, input not defined ! '
+
+   
+endif  else begin               ; isotropic or Bi-maxwellian options
+
+   error_msg='% CH_LOAD_ION_RATES: ERROR, RPE  model not recognised ! '
+   print,error_msg
+   return,-1
+
+   
+end
+
+    
+ endif ; end of PE section
+ 
 
 ;----------------------------------------
 ; create a ppr array for the proton rates
@@ -547,15 +927,17 @@ IF dielectronic THEN $
   ind_pos=where(ecmc[l2] GT ecmc[l1])
   ind_neg=where(ecmc[l2] LT ecmc[l1])
 
+; GDZ: fixed the correct scaling factor, instead of   8.63d-6
+  
   IF ind_neg[0] NE -1 THEN BEGIN
-     xx[ind_neg,*]=(8.63d-6/(mult[l1[ind_neg]])#(1./sqrt(t)))
-     yy[ind_neg,*]=8.63d-6* exp(-kte[ind_neg,*]) * $
+     xx[ind_neg,*]=(8.62913438d-6/(mult[l1[ind_neg]])#(1./sqrt(t)))
+     yy[ind_neg,*]=8.62913438d-6* exp(-kte[ind_neg,*]) * $
                    1./( mult[l2[ind_neg]] # sqrt(t) )
   ENDIF
   IF ind_pos[0] NE -1 THEN BEGIN
-     yy[ind_pos,*]=(8.63e-6/mult[l2[ind_pos]]) # (1./sqrt(t))
+     yy[ind_pos,*]=(8.62913438d-6/mult[l2[ind_pos]]) # (1./sqrt(t))
      
-     xx[ind_pos,*]=8.63e-6* exp(-kte[ind_pos,*]) * $ ; excitation 
+     xx[ind_pos,*]=8.62913438d-6* exp(-kte[ind_pos,*]) * $ ; excitation 
                    1./(mult[l1[ind_pos]] # sqrt(t))
   ENDIF
 
@@ -582,7 +964,15 @@ IF dielectronic THEN $
      ENDIF 
   ENDFOR
 
+  if keyword_set(verbose) and  n_elements(RPE) gt 0 then begin
 
+     print,'% CH_LOAD_ION_RATES, temp:',arr2str(temp)
+      if tag_exist(RPE, 'radiance_ergs')  then $
+         print,'% CH_LOAD_ION_RATES, CE rates: '+ $
+               string(qq[*, RPE.lower_level-1, RPE.upper_level-1] , format='(e10.2)')
+
+  end
+  
 ;
 ; Get the total radiative and dielectronic recombination rates.
 ; Note: this isn't used in the standard, single-ion atomic

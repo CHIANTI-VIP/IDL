@@ -3,7 +3,7 @@ PRO pop_solver, input, t, xne, pop,  data_str=data_str, $
                 frac_cutoff=frac_cutoff, pressure=pressure, $
                 verbose=verbose, n_levels=n_levels, out_rates=out_rates, error=error,$
                 noionrec=noionrec,no_rrec=no_rrec, all_levels=all_levels, $
-                no_auto=no_auto, sparse=sparse, regular=regular, lapack=lapack
+                no_auto=no_auto, sparse=sparse, regular=regular, lapack=lapack, RPE=RPE
 
 ;+
 ; PROJECT:  CHIANTI
@@ -132,6 +132,109 @@ PRO pop_solver, input, t, xne, pop,  data_str=data_str, $
 ;                       which the sparse matrix solver is used. See the routine
 ;                       matrix_solver for more details.
 ;
+;
+;       RPE
+;               An IDL structure containing information to be passed
+;               to the routines. The required tags currently are:
+;
+;        .gname
+;               e.g. 'fe_13'
+;
+;        .model 
+;               1 for Maxwellian isotropic;
+;               2 for bi-Maxwellian.
+;
+;        if RPE.model = 1:
+;
+;        .Tion
+;               the  ion temperature [K], from which 
+;               thermal_v  is calculated:
+;               The thermal velocity in cm/s, i.e. the most probable
+;               speed of the Maxwellian distribution of the ion
+;               velocities: 
+;
+;               thermal_v=sqrt((2*kb*Tion)/(mp*get_atomic_weight(Z))) 
+;
+;               where kb=1.38062e-16  is Boltzmann's constant
+;               (cgs units) 
+;               Tion  is the ion temperature [K]
+;               mp=1.672661e-24 is the proton mass in grams
+;               get_atomic_weight(Z) is the average atomic weight for
+;               the element Z (Z=26 for Iron).
+;
+;  if RPE.model = 2:
+;
+;        .Tpar
+;        .Tperp
+;              The temperatures [K] of the parallel and perpendicular
+;              distributions of the bi-Maxwellian, from which thermal_v
+;              the averaged thermal velocity between the parallel and
+;              perpendicular directions is calculated.
+;
+;        .r
+;              the distance of the scattering point C from Sun centre
+;              in solar radii units.
+;
+;        .u
+;              The outflow velocity [cm/s] assumed to be in the radial
+;              direction from Sun centre (default is 0.)
+;
+;        .psi 
+;              The angle between  the plane of the sky and u (default
+;              is 0.)
+;
+;        .a, .b
+;              
+;             The scattering factor is the angular dependence which
+;             varies with the type of transition. It can be written as
+;
+;             a+b*(n x n')^2
+;
+;             where a, b are coefficients. By default, no angular
+;             dependence is included, i.e. a=1 and b=0.
+;
+;        .radiance_ergs
+;
+;             The averaged disk radiance in ergs cm-2 s-1 sr-1 
+;
+;        .fwhm_a
+;
+;             The FWHM of the line disk profile in Angstroms.
+;             Note: the thermal FWHM in Angstroms is
+;
+;             2*sqrt(alog(2))*thermal_v* lambda_a/c 
+;
+;             where lambda_a is the wavelength in Angstroms and c the
+;             speed of light in cm/s. To this, the non-thermal FWHM should be
+;             added in quadrature. The non-thermal FWHM for coronal
+;             lines from Full-disk irradiance measurements is about 34
+;             km/s (Feldman & Behring 1974) which in Angstroms is:
+;
+;             2*sqrt(alog(2))*34e5* lambda_a/c
+;
+;         ALTERNATIVELY, instead of radiance_ergs, fwhm_a:
+;
+;            .disk_lambda
+;               a wavelength array (Angstroms)
+;
+;           .disk_spectrum
+;               a disk spectrum, in photons cm-2 s-1 sr-1 Angstroms-1
+;
+; OPTIONAL:
+;
+;        RPE.lb_helio_angle, RPE.lb_values
+;
+;             the heliocentric angle (radians, between 0 and !pi/2.)
+;             and the variation of the radiance across the disk, appropriately scaled.
+;
+;        RPE.radius
+;
+;             this is the radius of a circular source on the solar disk
+;             at Sun centre, in solar radius units. By default assume the
+;             whole disk. This option can be used to estimate the the RPE
+;             from a region on the Sun, e.g. an active region or a flare.
+;
+; 
 ; KEYWORD PARAMETERS:
 ;
 ;       VERBOSE     If set, then a number of informational messages
@@ -265,6 +368,10 @@ PRO pop_solver, input, t, xne, pop,  data_str=data_str, $
 ;            Bug in computing routine run time has been corrected.
 ;      v.12, 01-Mar-2023, Peter Young
 ;            The /noionrec keyword was not working, so this has been fixed.
+;
+;      v.13, 25-May 2024, GDZ
+;            added optional input RPE, passed to ch_load_ion_rates,
+;            to add resonant photo-excitation
 ;-
 
 IF n_params() LT 4 THEN BEGIN
@@ -298,7 +405,7 @@ rates1= ch_load_ion_rates(input, T, n_lev=n_levels, $
                             PATH=PATH, NOPROT=NOPROT, RPHOT=RPHOT, RADTEMP=RADTEMP,$
                             sum_mwl_coeffs=sum_mwl_coeffs, no_auto=no_auto, verbose=verbose,$
                           wvlmin=wmin,wvlmax=wmax, index_wgfa=anylines,obs_only=obs_only,$
-                          noionrec=noionrec,no_rrec=no_rrec   )
+                          noionrec=noionrec,no_rrec=no_rrec,RPE=RPE   )
 
 convertname, rates1.ion_data.gname,iz,ion
 

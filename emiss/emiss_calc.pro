@@ -1,4 +1,12 @@
 ;+
+;
+; PROJECT:
+;
+;        CHIANTI-VIP (Virtual IDL and Python) is  a member of the CHIANTI family
+;        mantained by Giulio Del Zanna, to develop additional features and
+;        provide them to the astrophysics community.
+;        Contributions via github are welcomed. 
+;
 ; NAME:
 ;      EMISS_CALC()
 ;       
@@ -51,6 +59,7 @@
 ;	ION	The spectroscopic number of the ion (e.g., 12 = XII)
 ;
 ; OPTIONAL INPUTS:
+;
 ;	TEMP	Direct specification of the temperature range (log T)
 ;
 ;	DENS	Direct specification of the density range (log Ne)
@@ -95,7 +104,111 @@
 ;                       is assumed when using the RADTEMP keyword in the call
 ;                       to pop_solver.
 ;
+;       RPE
+;               An IDL structure containing information to be passed
+;               to the routines. The required tags currently are:
+;
+;        .gname
+;               e.g. 'fe_13'
+;
+;        .model 
+;               1 for Maxwellian isotropic;
+;               2 for bi-Maxwellian.
+;
+;        if RPE.model = 1:
+;
+;        .Tion
+;               the  ion temperature [K], from which 
+;               thermal_v  is calculated:
+;               The thermal velocity in cm/s, i.e. the most probable
+;               speed of the Maxwellian distribution of the ion
+;               velocities: 
+;
+;               thermal_v=sqrt((2*kb*Tion)/(mp*get_atomic_weight(Z))) 
+;
+;               where kb=1.38062e-16  is Boltzmann's constant
+;               (cgs units) 
+;               Tion  is the ion temperature [K]
+;               mp=1.672661e-24 is the proton mass in grams
+;               get_atomic_weight(Z) is the average atomic weight for
+;               the element Z (Z=26 for Iron).
+;
+;  if RPE.model = 2:
+;
+;        .Tpar
+;        .Tperp
+;              The temperatures [K] of the parallel and perpendicular
+;              distributions of the bi-Maxwellian, from which thermal_v
+;              the averaged thermal velocity between the parallel and
+;              perpendicular directions is calculated.
+;
+;        .r
+;              the distance of the scattering point C from Sun centre
+;              in solar radii units.
+;
+;        .u
+;              The outflow velocity [cm/s] assumed to be in the radial
+;              direction from Sun centre (default is 0.)
+;
+;        .psi 
+;              The angle between  the plane of the sky and u (default
+;              is 0.)
+;
+;        .a, .b
+;              
+;             The scattering factor is the angular dependence which
+;             varies with the type of transition. It can be written as
+;
+;             a+b*(n x n')^2
+;
+;             where a, b are coefficients. By default, no angular
+;             dependence is included, i.e. a=1 and b=0.
+;
+;        .radiance_ergs
+;
+;             The averaged disk radiance in ergs cm-2 s-1 sr-1 
+;
+;        .fwhm_a
+;
+;             The FWHM of the line disk profile in Angstroms.
+;             Note: the thermal FWHM in Angstroms is
+;
+;             2*sqrt(alog(2))*thermal_v* lambda_a/c 
+;
+;             where lambda_a is the wavelength in Angstroms and c the
+;             speed of light in cm/s. To this, the non-thermal FWHM should be
+;             added in quadrature. The non-thermal FWHM for coronal
+;             lines from Full-disk irradiance measurements is about 34
+;             km/s (Feldman & Behring 1974) which in Angstroms is:
+;
+;             2*sqrt(alog(2))*34e5* lambda_a/c
+;
+;         ALTERNATIVELY, instead of radiance_ergs, fwhm_a:
+;
+;            .disk_lambda
+;               a wavelength array (Angstroms)
+;
+;           .disk_spectrum
+;               a disk spectrum, in photons cm-2 s-1 sr-1 Angstroms-1
+;
+; OPTIONAL:
+;
+;        RPE.lb_helio_angle, RPE.lb_values
+;
+;             the heliocentric angle (radians, between 0 and !pi/2.)
+;             and the variation of the radiance across the disk, appropriately scaled.
+;
+;        RPE.radius
+;
+;             this is the radius of a circular source on the solar disk
+;             at Sun centre, in solar radius units. By default assume the
+;             whole disk. This option can be used to estimate the the RPE
+;             from a region on the Sun, e.g. an active region or a flare.
+;
+;
+;
 ; KEYWORDS PARAMETERS:
+;
 ;	NO_DE	Drops the hc/lambda factor in the computation of the 
 ;		emissivities. Useful for emission measure analyses involving 
 ;		photon fluxes
@@ -265,7 +378,13 @@
 ;           negative wavelength in the .wgfa file become positive in
 ;           the emiss structure but have flag set to -1.
 ;
-; VERSION     :   41
+;       v.42,  GDZ,  25-May-2022
+;
+;            added optional input RPE, passed to pop_solver,
+;            to add resonant photo-excitation
+;
+;
+; VERSION     :   42
 ;
 ;-
 
@@ -276,7 +395,7 @@ FUNCTION  EMISS_CALC, IZ, ION, TEMP=TEMP, DENS=DENS, RADTEMP=RADTEMP, $
                       IONEQ_FILE=IONEQ_FILE, ABUND_FILE=ABUND_FILE, $
                       NO_SETUP=NO_SETUP, SUM_MWL_COEFFS=SUM_MWL_COEFFS, $
                       RADFUNC=RADFUNC, NO_CALC=NO_CALC, noionrec=noionrec, $
-                      no_rrec=no_rrec, verbose=verbose
+                      no_rrec=no_rrec, verbose=verbose, RPE=RPE
 
 
 
@@ -488,14 +607,14 @@ IF NOT keyword_set(no_calc) THEN BEGIN
    
    IF N_ELEMENTS(pressure) NE 0 THEN BEGIN
                                 ;
-      pop_solver, input, 10.^temp,10.^dens,pop, radfunc=radfunc, /pressure,verbose=verbose
+      pop_solver, input, 10.^temp,10.^dens,pop, radfunc=radfunc, /pressure,verbose=verbose, RPE=RPE
                                 ;
       emiss.em=pop[*,emiss.level2-1]
       FOR i=0,nt-1 DO emiss.em[i]=emiss.em[i]*mult_factor
    ENDIF ELSE BEGIN
                                 ;
       pop_solver, input, 10.^temp,10.^dens,pop, sum_mwl_coeffs=smc, $
-                  radfunc=radfunc,verbose=verbose
+                  radfunc=radfunc,verbose=verbose, RPE=RPE
 
            ;
       IF sumtst EQ 1 THEN BEGIN
