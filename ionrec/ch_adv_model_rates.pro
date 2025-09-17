@@ -117,6 +117,12 @@
 ;
 ;       N_LEVELS:  The maximum number of levels to be included when solving the level populations.
 ;
+;       PI:
+;            This is a structure containing three tags to include photo-ionization:
+;
+;             -wavelength_a (wavelength in Angstrom) 
+;             -radiance (radiance in photons cm-2 s-1 sr-1 Angstrom-1)
+;             -distance (distance  from Sun centre in solar radii)
 ;
 ; OUTPUTS:
 ;
@@ -165,222 +171,285 @@
 ;              Recombination fitting coefficients and metastable levels are now read
 ;              from .rrcoeffs and .drcoeffs files instead of passing coefficients into routine
 ;
-; VERSION:  5
+;       v.6, 19 August 2025 GDZ added photo-ionization (PI) in the calculation of the rates.
+;
+;       v.7, 16 Sep 2025  RPD
+;             Corrected indexing of transitions in PI rates array and summed rates over all
+;             final states. Added check to find out whether PI file exists for ion. Include
+;             PI rates in output of level-resolved rates and where there are no metastable levels.
+;
+;       v.8, 16 Sep 2025  GDZ Some minor modifications and now loop over the metastable states.
+;
+;
+; VERSION:  8
 ;
 ;- 
 
 function ch_adv_model_rates,this_ion,model_temp,model_density,$
-            model_atm=model_atm,verbose=verbose,quiet=quiet,$
-            n_levels=n_levels,level_resolved=level_resolved
-            
+                            model_atm=model_atm,verbose=verbose,quiet=quiet,$
+                            n_levels=n_levels,level_resolved=level_resolved, PI=PI
+  
 
-ryd_ev=13.605698d0
-equiv_elecs=[1,2,1,2,1,2,3,4,5,6,1,2,1,2,3,4]
+; check PI input 
+  if n_elements(pi) gt 0 then begin
 
-convertname,this_ion,el,effchg
-ion2filename,this_ion,ion_file
+     IF NOT tag_exist(pi,'wavelength_a') THEN BEGIN
+        message,/info,/cont,'% CH_ADV_MODEL_RATES: The tag wavelength_a (wavelength in Angstrom) does not exist for input PI. Returning...'
+        return,-1
+     endif
+     IF NOT tag_exist(pi,'radiance') THEN BEGIN
+        message,/info,/cont,'% CH_ADV_MODEL_RATES: The tag radiance (radiance in photons cm-2 s-1 sr-1 Angstrom-1) does not exist for input PI. Returning...'
+        return,-1
+     endif
+     IF NOT tag_exist(pi,'distance') THEN BEGIN
+        message,/info,/cont,'% CH_ADV_MODEL_RATES: The tag distance (distance  from Sun centre in solar radii) does not exist for input PI. Returning...'
+        return,-1
+     endif
+  endif 
+  
+  ryd_ev=13.605698d0
+  equiv_elecs=[1,2,1,2,1,2,3,4,5,6,1,2,1,2,3,4]
+
+  convertname,this_ion,el,effchg
+  ion2filename,this_ion,ion_file
 ;print, this_ion,el,effchg
-ntemp=n_elements(model_temp)
-nmeta=n_elements(meta_index)
+  ntemp=n_elements(model_temp)
+  nmeta=n_elements(meta_index)
 
 
 ; retrieve recombination data - this needs to be done first to get number of metastable levels
 ; provided in the NRB data
 
-if effchg gt 1 then begin
+  if effchg gt 1 then begin
 
-  rr_data=ch_rad_recomb(this_ion,model_temp,/level,quiet=quiet)
-  dr_data=ch_diel_recomb(this_ion,model_temp,/level,quiet=quiet)
-  sfactor=ch_nikolic_dr_suppression(this_ion,model_temp,density=model_density,quiet=quiet)
-   
-  nmeta=n_elements(rr_data[0,*])
-  meta_index=indgen(nmeta)+1
+     rr_data=ch_rad_recomb(this_ion,model_temp,/level,quiet=quiet)
+     dr_data=ch_diel_recomb(this_ion,model_temp,/level,quiet=quiet)
+     sfactor=ch_nikolic_dr_suppression(this_ion,model_temp,density=model_density,quiet=quiet)
+     
+     nmeta=n_elements(rr_data[0,*])
+     meta_index=indgen(nmeta)+1
 
-  rec_rates=dblarr(ntemp,nmeta)
-  for im=0,nmeta-1 do rec_rates[*,im]=double(rr_data[*,im]+dr_data[*,im]*sfactor)
-  ; NRB recombination data is calculated for all levels below first dipole transition,
-  ; so the metastable indices are sequential from the ground level
+     rec_rates=dblarr(ntemp,nmeta)
+     for im=0,nmeta-1 do rec_rates[*,im]=double(rr_data[*,im]+dr_data[*,im]*sfactor)
+                                ; NRB recombination data is calculated for all levels below first dipole transition,
+                                ; so the metastable indices are sequential from the ground level
 
-endif else begin
-  
-  ; find metastable levels in the case of neutrals - following recombination data,
-  ; metastables are included only up to first level with a dipole transition
-  metastable_levels,this_ion,metas,quiet=quiet
-  dipind=where(metas eq 0)
-  if dipind[0] eq -1 then nmeta=n_elements(metas) else nmeta=dipind[0]
-  meta_index=indgen(nmeta)+1
-  rec_rates=dblarr(ntemp,nmeta)
-  
-endelse
-
-
-ci_rates=dblarr(ntemp,nmeta)
-cti_rates=dblarr(ntemp,nmeta)
-ctr_rates=dblarr(ntemp,nmeta)
-
-
-; get ionisation rates
-
-if effchg le el then begin
-
-  di_file=ion_file+'.dilvl'
-
-  if file_exist(di_file) then begin
-    di_data=ch_ioniz_rate_lr(di_file,temp=model_temp,verbose=verbose)
-
-    for im=0,nmeta-1 do begin
-      dilvl=dblarr(ntemp)
-      diind=where(di_data.lev_i eq meta_index[im],nr)
-      for ir=0,nr-1 do $
-        dilvl=dilvl+di_data.rates[*,diind[ir]]
-      ci_rates[*,im]=ci_rates[*,im]+dilvl
-    endfor
-    
-    ea_file=ion_file+'.ealvl'
-
-    if file_exist(ea_file) then begin
-      ea_data=ch_ioniz_rate_lr(ea_file,temp=model_temp,verbose=verbose)
-
-      for im=0,nmeta-1 do begin
-        ealvl=dblarr(ntemp)
-        eaind=where(ea_data.lev_i eq meta_index[im],nr)
-        for ir=0,nr-1 do $
-          ealvl=ealvl+ea_data.rates[*,eaind[ir]]
-        ci_rates[*,im]=ci_rates[*,im]+ealvl
-      endfor
-    endif
-    
   endif else begin
-
-    ; if ab initio rates are not available use CHIANTI rates for ground
-    ; and Burgess and Chidichimo to estimate metastable rates
-    ch_grd=ioniz_rate(this_ion,model_temp,verbose=verbose) ; GDZ
-    ci_rates[*,0]=ch_grd
-
-    if nmeta gt 1 then begin  
-      grd_ip=ch_ip(this_ion)
-      grd_burgchid=ch_burgchid_rate(effchg-1,equiv_elecs[el-effchg],grd_ip,model_temp)
-      grdinf=where(grd_burgchid eq 0.0,nginf)
-
-      read_elvlc,ion_file+'.elvlc',l1,term,conf,ss,ll,jj,ecm,eryd,ecmth,erydth,ref
-
-      for im=1,nmeta-1 do begin
-        if eryd[meta_index[im]-1] gt 0.0 then meng=eryd[meta_index[im]-1] $
-          else meng=erydth[meta_index[im]-1]
-        meta_ip=grd_ip-meng*ryd_ev
-        meta_burgchid=ch_burgchid_rate(effchg-1,equiv_elecs[el-effchg],meta_ip,model_temp)
-
-        ionis_factor=meta_burgchid/grd_burgchid
-        if nginf gt 0 then ionis_factor[grdinf]=0.0d0
-        ci_rates[*,im]=ch_grd*ionis_factor
-      endfor
-    endif
-      
+     
+                                ; find metastable levels in the case of neutrals - following recombination data,
+                                ; metastables are included only up to first level with a dipole transition
+     metastable_levels,this_ion,metas,quiet=quiet
+     dipind=where(metas eq 0)
+     if dipind[0] eq -1 then nmeta=n_elements(metas) else nmeta=dipind[0]
+     meta_index=indgen(nmeta)+1
+     rec_rates=dblarr(ntemp,nmeta)
+     
   endelse
 
-endif
+
+  ci_rates=dblarr(ntemp,nmeta)
+  cti_rates=dblarr(ntemp,nmeta)
+  ctr_rates=dblarr(ntemp,nmeta)
+
+; GDZ add PI rates
+  pi_rates=dblarr(ntemp,nmeta)
+
+  if n_elements(pi) gt 0 then begin
+
+     if file_exist(ion_file+'_pi.lr') then begin ; RPD
+
+; read all the PI cross-sections:
+        pi_cs=read_pi_cs(ion_file+'_pi.lr') ; new format.
+        
+; select only those needed: 
+        ind=where_arr(pi_cs.lvl1,   meta_index, count)
+
+        pi_cs_sel={energies:pi_cs.energies,lvl1:pi_cs.lvl1[ind], lvl2:pi_cs.lvl2[ind],$
+                   pe:pi_cs.pe[ind], cs:pi_cs.cs[*,ind]}
+        
+; apply the dilution factor to the PI rate 
+        
+        out_pi=calc_pi_rates(pi_cs_sel, pi.wavelength_a, pi.radiance, dilution= r2w(pi.distance))
+
+        for im=0,nmeta-1 do begin
+; total over the final states:
+           ind=where(out_pi.LEVEL_I eq meta_index[im] )
+; Note:meta_index is not an IDL index, is the level number
+           pi_rates[*,im] = total(out_pi.rate_pi[ind]) 
+        endfor  
+
+
+     endif else print,' % CH_ADV_MODEL_RATES: no PI cross section file found for '+this_ion ; GDZ
+                                ; in this case zeros will be added to the rates.
+     
+  endif
+  
+  
+; get ionisation rates
+
+  if effchg le el then begin
+
+     di_file=ion_file+'.dilvl'
+
+     if file_exist(di_file) then begin
+        di_data=ch_ioniz_rate_lr(di_file,temp=model_temp,verbose=verbose)
+
+        for im=0,nmeta-1 do begin
+           dilvl=dblarr(ntemp)
+           diind=where(di_data.lev_i eq meta_index[im],nr)
+           for ir=0,nr-1 do $
+              dilvl=dilvl+di_data.rates[*,diind[ir]]
+           ci_rates[*,im]=ci_rates[*,im]+dilvl
+        endfor
+        
+        ea_file=ion_file+'.ealvl'
+
+        if file_exist(ea_file) then begin
+           ea_data=ch_ioniz_rate_lr(ea_file,temp=model_temp,verbose=verbose)
+
+           for im=0,nmeta-1 do begin
+              ealvl=dblarr(ntemp)
+              eaind=where(ea_data.lev_i eq meta_index[im],nr)
+              for ir=0,nr-1 do $
+                 ealvl=ealvl+ea_data.rates[*,eaind[ir]]
+              ci_rates[*,im]=ci_rates[*,im]+ealvl
+           endfor
+        endif
+        
+     endif else begin
+
+                                ; if ab initio rates are not available use CHIANTI rates for ground
+                                ; and Burgess and Chidichimo to estimate metastable rates
+        ch_grd=ioniz_rate(this_ion,model_temp,verbose=verbose) ; GDZ
+        ci_rates[*,0]=ch_grd
+
+        if nmeta gt 1 then begin  
+           grd_ip=ch_ip(this_ion)
+           grd_burgchid=ch_burgchid_rate(effchg-1,equiv_elecs[el-effchg],grd_ip,model_temp)
+           grdinf=where(grd_burgchid eq 0.0,nginf)
+
+           read_elvlc,ion_file+'.elvlc',l1,term,conf,ss,ll,jj,ecm,eryd,ecmth,erydth,ref
+
+           for im=1,nmeta-1 do begin
+              if eryd[meta_index[im]-1] gt 0.0 then meng=eryd[meta_index[im]-1] $
+              else meng=erydth[meta_index[im]-1]
+              meta_ip=grd_ip-meng*ryd_ev
+              meta_burgchid=ch_burgchid_rate(effchg-1,equiv_elecs[el-effchg],meta_ip,model_temp)
+
+              ionis_factor=meta_burgchid/grd_burgchid
+              if nginf gt 0 then ionis_factor[grdinf]=0.0d0
+              ci_rates[*,im]=ch_grd*ionis_factor
+           endfor
+        endif
+        
+     endelse
+
+  endif
 
 
 ; find charge transfer (CT) data if available
 
-if n_elements(model_atm) gt 0 then begin
+  if n_elements(model_atm) gt 0 then begin
 
-  if effchg le el then begin
-    cti_file=ion_file+'.ctilvl'
+     if effchg le el then begin
+        cti_file=ion_file+'.ctilvl'
 
-    if file_exist(cti_file) then begin
-      cti_data=ch_ioniz_rate_lr(cti_file,temp=model_temp,/ct)
+        if file_exist(cti_file) then begin
+           cti_data=ch_ioniz_rate_lr(cti_file,temp=model_temp,/ct)
 
-      for im=0,nmeta-1 do begin
-        ctilvl=dblarr(ntemp)
-        ctiind=where(cti_data.lev_i eq meta_index[im],nr)
-        for ir=0,nr-1 do begin
-          if cti_data.perturber_z[ctiind[ir]] eq 1 then $
-            ctilvl=ctilvl+cti_data.rates[*,ctiind[ir]]*model_atm.h2_frac $
-          else if cti_data.perturber_z[ctiind[ir]] eq 2 then begin
-            if cti_data.perturber_elecs[ctiind[ir]] eq 1 then $
-              ctilvl=ctilvl+cti_data.rates[*,ctiind[ir]]*model_atm.he2_frac*model_atm.he_abund
-            if cti_data.perturber_elecs[ctiind[ir]] eq 0 then $
-              ctilvl=ctilvl+cti_data.rates[*,ctiind[ir]]*model_atm.he3_frac*model_atm.he_abund
-          endif
-        endfor
+           for im=0,nmeta-1 do begin
+              ctilvl=dblarr(ntemp)
+              ctiind=where(cti_data.lev_i eq meta_index[im],nr)
+              for ir=0,nr-1 do begin
+                 if cti_data.perturber_z[ctiind[ir]] eq 1 then $
+                    ctilvl=ctilvl+cti_data.rates[*,ctiind[ir]]*model_atm.h2_frac $
+                 else if cti_data.perturber_z[ctiind[ir]] eq 2 then begin
+                    if cti_data.perturber_elecs[ctiind[ir]] eq 1 then $
+                       ctilvl=ctilvl+cti_data.rates[*,ctiind[ir]]*model_atm.he2_frac*model_atm.he_abund
+                    if cti_data.perturber_elecs[ctiind[ir]] eq 0 then $
+                       ctilvl=ctilvl+cti_data.rates[*,ctiind[ir]]*model_atm.he3_frac*model_atm.he_abund
+                 endif
+              endfor
 
-        cti_rates[*,im]=cti_rates[*,im]+ctilvl*model_atm.h_elec
+              cti_rates[*,im]=cti_rates[*,im]+ctilvl*model_atm.h_elec
 
-      endfor
-        
-    endif
+           endfor
+           
+        endif
+     endif
+     
+     if effchg gt 1 then begin
+        ctr_file=ion_file+'.ctrlvl'
+
+        if file_exist(ctr_file) then begin
+           ctr_data=ch_ioniz_rate_lr(ctr_file,temp=model_temp,/ct)
+
+           for im=0,nmeta-1 do begin
+              ctrlvl=dblarr(ntemp)
+              ctrind=where(ctr_data.lev_i eq meta_index[im],nr)
+              for ir=0,nr-1 do begin
+                 if ctr_data.perturber_z[ctrind[ir]] eq 1 then $
+                    ctrlvl=ctrlvl+ctr_data.rates[*,ctrind[ir]]*model_atm.h1_frac $
+                 else if ctr_data.perturber_z[ctrind[ir]] eq 2 then begin
+                    if ctr_data.perturber_elecs[ctrind[ir]] eq 2 then $
+                       ctrlvl=ctrlvl+ctr_data.rates[*,ctrind[ir]]*model_atm.he1_frac*model_atm.he_abund
+                    if ctr_data.perturber_elecs[ctrind[ir]] eq 1 then $
+                       ctrlvl=ctrlvl+ctr_data.rates[*,ctrind[ir]]*model_atm.he2_frac*model_atm.he_abund
+                 endif
+              endfor
+
+              ctr_rates[*,im]=ctr_rates[*,im]+ctrlvl*model_atm.h_elec
+
+           endfor
+           
+        endif
+     endif
+     
   endif
-  
-  if effchg gt 1 then begin
-    ctr_file=ion_file+'.ctrlvl'
-
-    if file_exist(ctr_file) then begin
-      ctr_data=ch_ioniz_rate_lr(ctr_file,temp=model_temp,/ct)
-
-      for im=0,nmeta-1 do begin
-        ctrlvl=dblarr(ntemp)
-        ctrind=where(ctr_data.lev_i eq meta_index[im],nr)
-        for ir=0,nr-1 do begin
-          if ctr_data.perturber_z[ctrind[ir]] eq 1 then $
-            ctrlvl=ctrlvl+ctr_data.rates[*,ctrind[ir]]*model_atm.h1_frac $
-          else if ctr_data.perturber_z[ctrind[ir]] eq 2 then begin
-            if ctr_data.perturber_elecs[ctrind[ir]] eq 2 then $
-              ctrlvl=ctrlvl+ctr_data.rates[*,ctrind[ir]]*model_atm.he1_frac*model_atm.he_abund
-            if ctr_data.perturber_elecs[ctrind[ir]] eq 1 then $
-              ctrlvl=ctrlvl+ctr_data.rates[*,ctrind[ir]]*model_atm.he2_frac*model_atm.he_abund
-          endif
-        endfor
-
-        ctr_rates[*,im]=ctr_rates[*,im]+ctrlvl*model_atm.h_elec
-
-      endfor
-        
-    endif
-  endif
-  
-endif
 
 
 ; begin level population calculation and then determine overall rates,
 ; cut off for number of levels in ion will be used if given in advanced model ion list
 
-if n_elements(level_resolved) gt 0 then begin
+  if n_elements(level_resolved) gt 0 then begin
 
-  final_ioniz=ci_rates+cti_rates
-  final_recomb=rec_rates+ctr_rates
-
-endif else begin
-  if nmeta gt 1 then begin
-
-    level_pops=dblarr(ntemp,nmeta)
-    final_ioniz=dblarr(ntemp)
-    final_recomb=dblarr(ntemp)
-
-    get_populations,this_ion,model_temp,n_levels,pops=these_pops,densities=model_density,$ 
-      /noionrec,/no_rrec,/no_auto,/pressure,verbose=verbose
-
-    for im=0,nmeta-1 do begin
-      level_pops[*,im]=reform(these_pops[meta_index[im]-1,*])
-
-      final_ioniz=final_ioniz+level_pops[*,im]*(ci_rates[*,im]+cti_rates[*,im])
-      final_recomb=final_recomb+level_pops[*,im]*(rec_rates[*,im]+ctr_rates[*,im])
-    endfor
+     final_ioniz=ci_rates+cti_rates+(pi_rates/model_density) ; RPD
+     final_recomb=rec_rates+ctr_rates
 
   endif else begin
+     
+     if nmeta gt 1 then begin
 
-    final_ioniz=ci_rates+cti_rates
-    final_recomb=rec_rates+ctr_rates
+        level_pops=dblarr(ntemp,nmeta)
+        final_ioniz=dblarr(ntemp)
+        final_recomb=dblarr(ntemp)
 
+        get_populations,this_ion,model_temp,n_levels,pops=these_pops,densities=model_density,$ 
+                        /noionrec,/no_rrec,/no_auto,/pressure,verbose=verbose
+
+        
+        for im=0,nmeta-1 do begin
+           
+           level_pops[*,im]=reform(these_pops[meta_index[im]-1,*])
+
+           final_ioniz=final_ioniz+level_pops[*,im]*(ci_rates[*,im]+cti_rates[*,im]+(pi_rates[*,im]/model_density) )
+           final_recomb=final_recomb+level_pops[*,im]*(rec_rates[*,im]+ctr_rates[*,im])
+        endfor
+
+     endif else begin
+
+        final_ioniz=ci_rates+cti_rates+(pi_rates/model_density) ; RPD
+        final_recomb=rec_rates+ctr_rates
+
+     endelse
   endelse
-endelse
 
 
 ; density is not included in overall rates because some routines,
 ; such as make_ioneq_all, use rate coefficients rather than rates
-final_rates={final_ioniz:final_ioniz,final_recomb:final_recomb}
+  final_rates={final_ioniz:final_ioniz,final_recomb:final_recomb}
 
-return,final_rates
+  return,final_rates
 
 
 end

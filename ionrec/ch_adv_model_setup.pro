@@ -95,6 +95,7 @@
 ;                     for creating lookup tables for a range of hydrogen (and helium)
 ;                     parameters. In this case the temp tag in atmos_params is ignored.
 ;
+;
 ; OUTPUTS:
 ;
 ;       IONS_NLEVELS:  An array of integers indicating the maximum number of levels

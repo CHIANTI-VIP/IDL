@@ -194,6 +194,13 @@
 ;                     for creating lookup tables for a range of hydrogen (and helium)
 ;                     parameters. In this case the temp tag in atmos_params is ignored.
 ;
+;        PI:
+;            This is a structure containing three tags to include photo-ionization:
+;
+;             -wavelength_a (wavelength in Angstrom) 
+;             -radiance (radiance in photons cm-2 s-1 sr-1 Angstrom-1)
+;             -distance (distance  from Sun centre in solar radii)
+;
 ; OUTPUTS:
 ;
 ;       IONEQ_DATA=dblarr(ntemp, 30,31) where ntemp is the number of
@@ -303,7 +310,9 @@
 ;                directly without needing to read an atmosphere (intended for use in producing large
 ;                lookup tables).
 ;
-; VERSION    v.15
+;     v.16, 19 August 2025 GDZ added photo-ionization (PI)
+;
+; VERSION    v.16 
 ;-
 
 
@@ -311,7 +320,7 @@ function ch_calc_ioneq,temperatures,outname=outname,elements=elements,density=de
                            pressure=pressure,model_file=model_file,advanced_model=advanced_model,ct=ct,$
                            atmosphere_file=atmosphere_file,he_abund=he_abund,verbose=verbose,quiet=quiet,$
                            err_msg=err_msg,warning_msg=warning_msg,dr_suppression=dr_suppression,$
-                           atmos_params=atmos_params
+                           atmos_params=atmos_params, PI=PI
 
   t1=systime(1)
   err_msg=''
@@ -325,6 +334,35 @@ function ch_calc_ioneq,temperatures,outname=outname,elements=elements,density=de
   if n_elements(verbose) eq 0 then verbose=0 
   if verbose then quiet=0 else quiet=1
 
+  ; By default for now do not include charge transfer, but make the advanced models the default
+  if n_elements(advanced_model) eq 0 then advanced_model=1
+  if n_elements(ct) eq 0 then ct=0 ; GDZ
+  
+; check PI
+  if n_elements(pi) gt 0 then begin
+
+       IF NOT tag_exist(pi,'wavelength_a') THEN BEGIN
+    message,/info,/cont,'The tag wavelength_a (wavelength in Angstrom) does not exist for input PI. Returning...'
+    return,-1
+ endif
+       IF NOT tag_exist(pi,'radiance') THEN BEGIN
+    message,/info,/cont,'The tag radiance (radiance in photons cm-2 s-1 sr-1 Angstrom-1) does not exist for input PI. Returning...'
+    return,-1
+ endif
+       IF NOT tag_exist(pi,'distance') THEN BEGIN
+    message,/info,/cont,'The tag distance (distance  from Sun centre in solar radii) does not exist for input PI. Returning...'
+    return,-1
+ endif
+
+       if advanced_model eq 0 then print,'% CH_CALC_IONEQ: photo-ionization not included unless advanced_model=1'
+       
+;      pi_file = concat_dir(!xuvtop,'c/c_1/c_1_pi.lvl')
+;        rate_data = calc_pi_rate(pi_file, lambda_a, atm_radiance)
+      
+  endif
+  
+
+  
   ; By default write an ion equilibrium file.
   if n_elements(outname) gt 0 then begin
 
@@ -347,9 +385,6 @@ function ch_calc_ioneq,temperatures,outname=outname,elements=elements,density=de
   end
   
      
-  ; By default for now do not include charge transfer, but make the advanced models the default
-  if n_elements(advanced_model) eq 0 then advanced_model=1
-  if n_elements(ct) eq 0 then ct=0 ; GDZ
 
   ioneqmin=1.e-20
   zlabl=['H','He','Li','Be','B','C','N','O','F','Ne','Na',$
@@ -585,9 +620,9 @@ function ch_calc_ioneq,temperatures,outname=outname,elements=elements,density=de
             ; call the sub-routine to calculate overall ionisation and recombination rates
             if keyword_set(ct) then $
               rates_tr=ch_adv_model_rates(gname,temperatures,densities,$
-                model_atm=params.ct_model,verbose=verbose,n_levels=n_levels,quiet=quiet) $
+                model_atm=params.ct_model,verbose=verbose,n_levels=n_levels,quiet=quiet, PI=PI) $
             else rates_tr=ch_adv_model_rates(gname,temperatures,densities,$
-              verbose=verbose,n_levels=n_levels,quiet=quiet)
+              verbose=verbose,n_levels=n_levels,quiet=quiet, PI=PI)
 
             ion_rate(*,ion)=rates_tr.final_ioniz[*]
             rec_rate(*,ion)=rates_tr.final_recomb[*]
