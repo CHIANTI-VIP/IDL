@@ -1,11 +1,26 @@
 # IDL
 
-This is a repository for the CHIANTI IDL programs. 
+This is a repository for advanced CHIANTI-VIP IDL programs.
 
-The current development version is for CHIANTI version 11, developed by Giulio Del Zanna 
-and Roger Dufresne, see the CHIANTI paper at https://doi.org/10.48550/arXiv.2403.16922
 
-Future versions will have additional features. 
+CHIANTI-VIP, developed by Giulio Del Zanna,
 
-Several of the programs call IDL programs that are distributed in the gen/ directory of  SolarSoft,
-a programming and data analysis environment for the solar physics community: http://www.lmsal.com/solarsoft/ 
+contains IDL programs with advanced features not yet included in the
+CHIANTI IDL programs.
+
+Some details can be found at
+
+https://chianti-vip.com/index.php/new-atomic-data/
+
+
+Latest main additions are
+
+
+2025 September added photo-ionization in the advanced ionization equilibrium models
+              (Dufresne, Del Zanna 2025, MNRAS)
+
+2025 August    added resonant photo-excitation (Del Zanna, 2025, MNRAS)
+
+
+2024: advanced ionization equilibrium models, also made available
+in CHIANTI v.11 (Dufresne, Del Zanna et al. 2024)
